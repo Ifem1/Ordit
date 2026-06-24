@@ -1,0 +1,106 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Inter+Tight:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+
+@import "tailwindcss";
+
+:root {
+  --brand: #4f46e5;
+  --brand-light: #6366f1;
+  --teal: #0d9488;
+  --teal-light: #14b8a6;
+  --surface: #0f0f1a;
+  --surface-card: rgba(255,255,255,0.04);
+  --border: rgba(255,255,255,0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #080812;
+  color: #e8e8f0;
+  font-family: 'Inter Tight', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Sora', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* ── Glassmorphism ───────────────────────────────────────────────────────── */
+
+.glass {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* ── Glows ───────────────────────────────────────────────────────────────── */
+
+.glow-brand { box-shadow: 0 0 24px rgba(79, 70, 229, 0.3); }
+.glow-teal  { box-shadow: 0 0 24px rgba(13, 148, 136, 0.3); }
+.text-glow  { text-shadow: 0 0 20px rgba(79, 70, 229, 0.6); }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+
+/* ── Gradient background ─────────────────────────────────────────────────── */
+
+.gradient-bg {
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(79,70,229,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 80%, rgba(13,148,136,0.12) 0%, transparent 60%),
+    #080812;
+}
+
+/* ── Verdict badges ──────────────────────────────────────────────────────── */
+
+.verdict-APPROVED       { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+.verdict-UNSUPPORTED    { background: rgba(239,68,68,0.15);  color: #f87171; border: 1px solid rgba(239,68,68,0.3);  }
+.verdict-NEEDS_REVISION { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+.verdict-NEEDS_REVIEW   { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+.verdict-PENDING        { background: rgba(100,116,139,0.15);color: #94a3b8; border: 1px solid rgba(100,116,139,0.3);}
+.verdict-HUMAN_APPROVED { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+.verdict-HUMAN_REJECTED { background: rgba(239,68,68,0.15);  color: #f87171; border: 1px solid rgba(239,68,68,0.3);  }
+
+/* ── Score ring ──────────────────────────────────────────────────────────── */
+
+.score-ring {
+  stroke-dasharray: 251.2;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 1s ease;
+}
