@@ -104,18 +104,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* â”€â”€ Console preview image â”€â”€ */}
-      <section className=”max-w-5xl mx-auto px-6 pb-8”>
-        <div className=”rounded-2xl overflow-hidden border border-white/[0.08] shadow-2xl”>
-          <img
-            src=”https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=500&fit=crop&q=80”
-            alt=”Data analytics dashboard”
-            className=”w-full h-auto object-cover”
-            loading=”lazy”
-          />
-        </div>
-      </section>
-
       {/* â”€â”€ Preview card â”€â”€ */}
       <section className=”max-w-4xl mx-auto px-6 pb-24”>
         <div className=”glass-card p-8 border-indigo-500/20 glow-brand”>
@@ -154,28 +142,6 @@ export default function LandingPage() {
             <span className="text-teal-400 font-mono">0x4f2aâ€¦c8e1</span> Â·{" "}
             StudioNet Block #1,247,832
           </p>
-        </div>
-      </section>
-
-      {/* â”€â”€ Trust image â”€â”€ */}
-      <section className=”max-w-6xl mx-auto px-6 pb-4”>
-        <div className=”grid grid-cols-1 md:grid-cols-2 gap-6 items-center”>
-          <div className=”rounded-xl overflow-hidden border border-white/[0.06]”>
-            <img
-              src=”https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&h=400&fit=crop&q=80”
-              alt=”Business intelligence reports”
-              className=”w-full h-auto object-cover”
-              loading=”lazy”
-            />
-          </div>
-          <div className=”rounded-xl overflow-hidden border border-white/[0.06]”>
-            <img
-              src=”https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=600&h=400&fit=crop&q=80”
-              alt=”Data visualization and monitoring”
-              className=”w-full h-auto object-cover”
-              loading=”lazy”
-            />
-          </div>
         </div>
       </section>
 

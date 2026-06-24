@@ -4,8 +4,6 @@
 
 Ordit is a full-stack AI insight verification platform built on [GenLayer](https://genlayer.com). Different AI models produce different narratives from the same data — Ordit uses GenLayer Intelligent Contracts to determine whether AI-generated insights are actually supported by the underlying evidence, before they become business decisions.
 
-![Dashboard Preview](https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=500&fit=crop&q=80)
-
 ---
 
 ## Core Innovation
