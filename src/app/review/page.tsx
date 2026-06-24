@@ -31,7 +31,7 @@ export default function HumanReviewListPage() {
         .in("status", ["NEEDS_REVIEW", "NEEDS_REVISION"])
         .order("created_at", { ascending: false });
 
-      setRequests((data as Request[]) ?? []);
+      setRequests((data as unknown as Request[]) ?? []);
       setLoading(false);
     };
     load();

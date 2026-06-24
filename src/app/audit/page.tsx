@@ -33,7 +33,7 @@ export default function AuditTrailListPage() {
         .order("created_at", { ascending: false })
         .limit(50);
 
-      setRequests((data as AuditRequest[]) ?? []);
+      setRequests((data as unknown as AuditRequest[]) ?? []);
       setLoading(false);
     };
     load();
