@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
@@ -48,7 +48,7 @@ const verdictExamples = [
 export default function LandingPage() {
   return (
     <div className="min-h-screen gradient-bg text-white">
-      {/* â”€â”€ Header â”€â”€ */}
+      {/* Header */}
       <header className="glass border-b border-white/[0.06] sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <OrditLogo size="md" />
@@ -68,11 +68,11 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* â”€â”€ Hero â”€â”€ */}
+      {/* Hero */}
       <section className="max-w-6xl mx-auto px-6 pt-24 pb-20 text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full glass border-indigo-500/20 text-xs text-indigo-300 mb-8">
           <Star className="w-3 h-3" />
-          Powered by GenLayer Intelligent Contracts Â· StudioNet
+          Powered by GenLayer Intelligent Contracts &middot; StudioNet
         </div>
 
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-none">
@@ -86,7 +86,7 @@ export default function LandingPage() {
         <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
           Different AI models produce different narratives from the same data.
           Ordit uses GenLayer consensus to determine whether AI-generated insights
-          are actually supported by the underlying evidence â€” before they become decisions.
+          are actually supported by the underlying evidence &mdash; before they become decisions.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -104,12 +104,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* â”€â”€ Preview card â”€â”€ */}
-      <section className=”max-w-4xl mx-auto px-6 pb-24”>
-        <div className=”glass-card p-8 border-indigo-500/20 glow-brand”>
+      {/* Preview card */}
+      <section className="max-w-4xl mx-auto px-6 pb-24">
+        <div className="glass-card p-8 border-indigo-500/20 glow-brand">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <p className="text-xs text-slate-500 mb-1">AUDIT REQUEST Â· Q3 2024 REVENUE REPORT</p>
+              <p className="text-xs text-slate-500 mb-1">AUDIT REQUEST &middot; Q3 2024 REVENUE REPORT</p>
               <h3 className="text-lg font-semibold text-white">
                 Q3 revenue growth was primarily driven by enterprise tier expansion
               </h3>
@@ -138,16 +138,16 @@ export default function LandingPage() {
             ))}
           </div>
           <p className="text-xs text-slate-500">
-            GenLayer validators independently reached consensus Â·{" "}
-            <span className="text-teal-400 font-mono">0x4f2aâ€¦c8e1</span> Â·{" "}
+            GenLayer validators independently reached consensus &middot;{" "}
+            <span className="text-teal-400 font-mono">0x4f2a&hellip;c8e1</span> &middot;{" "}
             StudioNet Block #1,247,832
           </p>
         </div>
       </section>
 
-      {/* â”€â”€ Features â”€â”€ */}
-      <section id=”how” className=”max-w-6xl mx-auto px-6 py-20”>
-        <div className=”text-center mb-14”>
+      {/* Features */}
+      <section id="how" className="max-w-6xl mx-auto px-6 py-20">
+        <div className="text-center mb-14">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
             Why your AI summaries need verification
           </h2>
@@ -172,7 +172,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* â”€â”€ Verdicts â”€â”€ */}
+      {/* Verdicts */}
       <section id="verdicts" className="max-w-6xl mx-auto px-6 py-20">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold mb-4">Four possible verdicts. All on-chain.</h2>
@@ -190,7 +190,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* â”€â”€ Pricing â”€â”€ */}
+      {/* Pricing */}
       <section id="pricing" className="max-w-6xl mx-auto px-6 py-20">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold mb-4">Simple, transparent pricing</h2>
@@ -202,7 +202,7 @@ export default function LandingPage() {
             <ul className="space-y-2 text-sm text-slate-300 mb-6">
               {["5 audits per month", "Files up to 5 MB", "Basic explanations", "30-day history"].map((f) => (
                 <li key={f} className="flex items-center gap-2">
-                  <span className="text-emerald-400">âœ“</span> {f}
+                  <span className="text-emerald-400">&#10003;</span> {f}
                 </li>
               ))}
             </ul>
@@ -228,7 +228,7 @@ export default function LandingPage() {
                 "Historical analytics",
               ].map((f) => (
                 <li key={f} className="flex items-center gap-2">
-                  <span className="text-indigo-400">âœ“</span> {f}
+                  <span className="text-indigo-400">&#10003;</span> {f}
                 </li>
               ))}
             </ul>
@@ -239,12 +239,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* â”€â”€ Footer â”€â”€ */}
+      {/* Footer */}
       <footer className="border-t border-white/[0.06] py-10">
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <OrditLogo size="sm" />
           <p className="text-sm text-slate-500">
-            Â© {new Date().getFullYear()} Ordit. Built on{" "}
+            &copy; {new Date().getFullYear()} Ordit. Built on{" "}
             <a
               href="https://studio.genlayer.com"
               target="_blank"
@@ -260,4 +260,3 @@ export default function LandingPage() {
     </div>
   );
 }
-
