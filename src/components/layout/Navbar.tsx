@@ -84,7 +84,9 @@ export default function Navbar() {
   return (
     <aside className="flex flex-col w-60 min-h-screen glass border-r border-white/[0.06] px-3 py-6 shrink-0">
       <div className="px-3 mb-8">
-        <OrditLogo size="md" />
+        <Link href="/" className="block hover:opacity-80 transition-opacity">
+          <OrditLogo size="md" />
+        </Link>
         <p className="text-xs text-slate-500 mt-1 pl-1">AI Insight Verification</p>
       </div>
 
