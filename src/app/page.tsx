@@ -104,9 +104,21 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* â”€â”€ Console preview image â”€â”€ */}
+      <section className=”max-w-5xl mx-auto px-6 pb-8”>
+        <div className=”rounded-2xl overflow-hidden border border-white/[0.08] shadow-2xl”>
+          <img
+            src=”https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&h=500&fit=crop&q=80”
+            alt=”Data analytics dashboard”
+            className=”w-full h-auto object-cover”
+            loading=”lazy”
+          />
+        </div>
+      </section>
+
       {/* â”€â”€ Preview card â”€â”€ */}
-      <section className="max-w-4xl mx-auto px-6 pb-24">
-        <div className="glass-card p-8 border-indigo-500/20 glow-brand">
+      <section className=”max-w-4xl mx-auto px-6 pb-24”>
+        <div className=”glass-card p-8 border-indigo-500/20 glow-brand”>
           <div className="flex items-center justify-between mb-6">
             <div>
               <p className="text-xs text-slate-500 mb-1">AUDIT REQUEST Â· Q3 2024 REVENUE REPORT</p>
@@ -145,9 +157,31 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* â”€â”€ Trust image â”€â”€ */}
+      <section className=”max-w-6xl mx-auto px-6 pb-4”>
+        <div className=”grid grid-cols-1 md:grid-cols-2 gap-6 items-center”>
+          <div className=”rounded-xl overflow-hidden border border-white/[0.06]”>
+            <img
+              src=”https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&h=400&fit=crop&q=80”
+              alt=”Business intelligence reports”
+              className=”w-full h-auto object-cover”
+              loading=”lazy”
+            />
+          </div>
+          <div className=”rounded-xl overflow-hidden border border-white/[0.06]”>
+            <img
+              src=”https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=600&h=400&fit=crop&q=80”
+              alt=”Data visualization and monitoring”
+              className=”w-full h-auto object-cover”
+              loading=”lazy”
+            />
+          </div>
+        </div>
+      </section>
+
       {/* â”€â”€ Features â”€â”€ */}
-      <section id="how" className="max-w-6xl mx-auto px-6 py-20">
-        <div className="text-center mb-14">
+      <section id=”how” className=”max-w-6xl mx-auto px-6 py-20”>
+        <div className=”text-center mb-14”>
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
             Why your AI summaries need verification
           </h2>
@@ -198,7 +232,7 @@ export default function LandingPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
           <Card>
             <p className="text-sm text-slate-400 mb-1">Free</p>
-            <p className="text-4xl font-bold text-white mb-6">$0<span className="text-lg font-normal text-slate-400">/mo</span></p>
+            <p className="text-4xl font-bold text-white mb-6">0 <span className="text-lg font-normal text-slate-400">GEN/mo</span></p>
             <ul className="space-y-2 text-sm text-slate-300 mb-6">
               {["5 audits per month", "Files up to 5 MB", "Basic explanations", "30-day history"].map((f) => (
                 <li key={f} className="flex items-center gap-2">
@@ -216,7 +250,7 @@ export default function LandingPage() {
               <p className="text-sm text-indigo-300">Pro</p>
               <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">Popular</span>
             </div>
-            <p className="text-4xl font-bold text-white mb-6">$49<span className="text-lg font-normal text-slate-400">/mo</span></p>
+            <p className="text-4xl font-bold text-white mb-6">10 <span className="text-lg font-normal text-slate-400">GEN/mo</span></p>
             <ul className="space-y-2 text-sm text-slate-300 mb-6">
               {[
                 "Unlimited audits",
@@ -253,7 +287,7 @@ export default function LandingPage() {
             >
               GenLayer StudioNet
             </a>
-            .
+            . Powered by GEN tokens.
           </p>
         </div>
       </footer>

@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   description:
     "Ordit uses GenLayer Intelligent Contracts to determine whether AI-generated insights are actually supported by the underlying data.",
   keywords: ["AI audit", "GenLayer", "business intelligence", "insight verification", "consensus"],
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
