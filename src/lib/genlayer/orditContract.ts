@@ -89,6 +89,15 @@ export async function getOrganizationIndex(): Promise<string[]> {
   return parseIndex(result);
 }
 
+export async function getUserOrganizationIndex(wallet: string): Promise<string[]> {
+  const { result } = await callGenLayerMethod<string>(
+    addr(),
+    "get_user_organization_index",
+    { wallet },
+  );
+  return parseIndex(result);
+}
+
 export async function addOrganizationRole(
   orgId: string,
   wallet: string,
@@ -229,6 +238,7 @@ export async function submitAndAuditInsight(
       business_context: params.business_context,
       claim_hash: params.claim_hash,
       evidence_manifest_hash: params.evidence_manifest_hash ?? "",
+      evidence_source_urls: params.evidence_source_urls,
       submitted_at: params.submitted_at ?? ts,
       adjudicated_at: params.adjudicated_at ?? ts,
     },
@@ -263,6 +273,7 @@ export async function submitInsightAuditRequest(
       business_context: params.business_context,
       claim_hash: params.claim_hash,
       evidence_manifest_hash: params.evidence_manifest_hash ?? "",
+      evidence_source_urls: params.evidence_source_urls,
       submitted_at: params.submitted_at ?? now(),
     },
     sender,

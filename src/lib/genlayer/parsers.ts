@@ -27,6 +27,17 @@ function toRaw(result: unknown): Raw {
   return {};
 }
 
+function toTimestamp(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
 // Pipe-separated index string → string array
 export function parseIndex(result: unknown): string[] {
   if (typeof result === "string") {
@@ -88,7 +99,7 @@ export function parseInsightRequest(result: unknown): InsightAuditRequest {
     claim_hash: String(raw.claim_hash ?? ""),
     submitter: String(raw.submitted_by ?? raw.submitter ?? ""),
     status: raw.status ?? "PENDING",
-    submitted_at: Number(raw.submitted_at ?? 0),
+    submitted_at: toTimestamp(raw.submitted_at),
   };
 }
 
@@ -115,6 +126,9 @@ export function parseFindings(raw: Raw): InsightFindings {
     misleading_statements: arr(raw.misleading_statements),
     contradictions: arr(raw.contradictions ?? []),
     risks: arr(raw.risks),
+    cited_sources: arr(raw.cited_sources),
+    evidence_gaps: arr(raw.evidence_gaps),
+    evidence_quality: String(raw.evidence_quality ?? ""),
     recommendations: arr(raw.recommendations),
     required_changes: arr(raw.required_changes),
     rationale: String(raw.rationale ?? ""),
@@ -132,7 +146,7 @@ export function parseDecision(result: unknown): InsightDecision {
     verdict: (raw.verdict ?? "PENDING") as Verdict,
     scores: parseScores(scoresRaw),
     findings: parseFindings(findingsRaw),
-    adjudicated_at: Number(raw.adjudicated_at ?? 0),
+    adjudicated_at: toTimestamp(raw.adjudicated_at),
     tx_hash: String(raw.tx_hash ?? ""),
   };
 }
@@ -144,8 +158,10 @@ export function parseAuditLog(result: unknown): AuditLogEntry {
     request_id: String(raw.request_id ?? ""),
     event_type: String(raw.event_type ?? ""),
     actor: String(raw.actor ?? ""),
-    payload: { summary: raw.summary ?? "", data_hash: raw.data_hash ?? "" },
+    payload: typeof raw.payload === "object" && raw.payload !== null
+      ? raw.payload as Record<string, unknown>
+      : { summary: raw.summary ?? "", data_hash: raw.data_hash ?? "" },
     tx_hash: String(raw.tx_hash ?? raw.data_hash ?? ""),
-    timestamp: Number(raw.created_at ?? raw.timestamp ?? 0),
+    timestamp: toTimestamp(raw.created_at ?? raw.timestamp),
   };
 }

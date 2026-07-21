@@ -36,7 +36,8 @@ class OrditContract(gl.Contract):
 
     What should stay off-chain:
     - full documents, raw data files, PDFs, evidence files, long tables.
-      Store those in Supabase/storage and put hashes or summaries here.
+      Store stable URLs, content hashes, or manifests here; validators should
+      fetch and evaluate source material directly whenever possible.
     """
 
     owner: str
@@ -54,6 +55,7 @@ class OrditContract(gl.Contract):
     organizations: TreeMap[str, str]
     org_roles: TreeMap[str, str]
     org_index: TreeMap[str, str]
+    user_org_index: TreeMap[str, str]
 
     datasets: TreeMap[str, str]
     org_dataset_index: TreeMap[str, str]
@@ -93,6 +95,7 @@ class OrditContract(gl.Contract):
         self.organizations = TreeMap()
         self.org_roles = TreeMap()
         self.org_index = TreeMap()
+        self.user_org_index = TreeMap()
 
         self.datasets = TreeMap()
         self.org_dataset_index = TreeMap()
@@ -122,6 +125,11 @@ class OrditContract(gl.Contract):
 
     def _sender(self) -> str:
         return gl.message.sender_address.as_hex.lower()
+
+    def _normalise_wallet(self, wallet: typing.Any) -> str:
+        if hasattr(wallet, "as_hex"):
+            return wallet.as_hex.lower()
+        return str(wallet).lower()
 
     def _json(self, value: typing.Any) -> str:
         return json.dumps(value, sort_keys=True)
@@ -196,6 +204,70 @@ class OrditContract(gl.Contract):
         result.append(self._limit(text, max_len))
         return result
 
+    def _parse_json_list(self, value: str) -> typing.List[typing.Any]:
+        if value is None or value.strip() == "":
+            return []
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            return []
+        return []
+
+    def _normalise_evidence_sources(self, raw_sources: str) -> str:
+        sources = self._parse_json_list(raw_sources)
+        normalised: typing.List[typing.Any] = []
+        for source in sources:
+            if len(normalised) >= 6:
+                break
+            if isinstance(source, str):
+                url = source.strip()
+                label = ""
+            elif isinstance(source, dict):
+                url = str(source.get("url", "")).strip()
+                label = str(source.get("label", "")).strip()
+            else:
+                continue
+            lower = url.lower()
+            if not (lower.startswith("https://") or lower.startswith("http://")):
+                continue
+            normalised.append({
+                "url": self._limit(url, 500),
+                "label": self._limit(label, 120),
+            })
+        return self._json(normalised)
+
+    def _summarise_evidence_sources(self, raw_sources: str) -> str:
+        sources = self._parse_json_list(raw_sources)
+        summaries: typing.List[typing.Any] = []
+        for source in sources:
+            if len(summaries) >= 4:
+                break
+            if not isinstance(source, dict):
+                continue
+            url = str(source.get("url", "")).strip()
+            label = str(source.get("label", "")).strip()
+            if url == "":
+                continue
+            try:
+                response = gl.nondet.web.get(url)
+                body = response.body.decode("utf-8", errors="ignore")
+                summaries.append({
+                    "url": self._limit(url, 500),
+                    "label": self._limit(label, 120),
+                    "status_code": int(response.status),
+                    "content_preview": self._limit(body, 5000),
+                })
+            except Exception as exc:
+                summaries.append({
+                    "url": self._limit(url, 500),
+                    "label": self._limit(label, 120),
+                    "status_code": 0,
+                    "error": "EXTERNAL_FETCH_ERROR: " + self._limit(str(exc), 240),
+                })
+        return self._json(summaries)
+
     def _next_id(self, prefix: str, counter_name: str) -> str:
         if counter_name == "org":
             self.org_counter = self.org_counter + u256(1)
@@ -260,10 +332,11 @@ class OrditContract(gl.Contract):
         return self._load(raw)
 
     def _is_org_member(self, org_id: str, wallet: str) -> bool:
+        normalised_wallet = self._normalise_wallet(wallet)
         org = self._load(self.organizations.get(org_id, ""))
-        if org.get("owner", "").lower() == wallet.lower():
+        if org.get("owner", "").lower() == normalised_wallet:
             return True
-        role = self.org_roles.get(self._key2(org_id, wallet.lower()), "")
+        role = self.org_roles.get(self._key2(org_id, normalised_wallet), "")
         return role != "" and role != "REMOVED"
 
     def _require_org_member(self, org_id: str) -> None:
@@ -331,6 +404,8 @@ class OrditContract(gl.Contract):
         recommendations = self._list_of_strings(findings.get("recommendations", []), 12, 360)
         required_changes = self._list_of_strings(findings.get("required_changes", []), 12, 360)
         risks = self._list_of_strings(findings.get("risks", []), 10, 360)
+        cited_sources = self._list_of_strings(findings.get("cited_sources", []), 12, 500)
+        evidence_gaps = self._list_of_strings(findings.get("evidence_gaps", []), 12, 400)
 
         reviewer_required = verdict == "NEEDS_REVIEW"
         revision_required = verdict == "NEEDS_REVISION"
@@ -355,6 +430,9 @@ class OrditContract(gl.Contract):
                 "recommendations": recommendations,
                 "required_changes": required_changes,
                 "risks": risks,
+                "cited_sources": cited_sources,
+                "evidence_gaps": evidence_gaps,
+                "evidence_quality": self._limit(findings.get("evidence_quality", ""), 800),
                 "rationale": self._limit(findings.get("rationale", ""), 2000),
                 "audit_summary": self._limit(findings.get("audit_summary", ""), 800),
             },
@@ -410,23 +488,29 @@ class OrditContract(gl.Contract):
         })
 
         def evaluate_once() -> str:
+            evidence_summaries = self._summarise_evidence_sources(
+                str(request_record.get("evidence_source_urls", "[]"))
+            )
             prompt = f"""
 You are a decentralized AI insight auditor for Ordit.
 
 Your job is to determine whether the submitted AI-generated business insight is
 genuinely supported by the underlying data. You must evaluate it rigorously
-against the provided metrics, assumptions, and business context.
+against validator-fetched source material first, then the provided metrics,
+assumptions, and business context.
 
 Important rules:
 1. Do not invent data, statistics, or business facts not present in the submission.
-2. Treat the provided metrics and schema as the authoritative evidence base.
+2. Treat validator-fetched source summaries as stronger evidence than user-entered metrics.
 3. If a claim goes beyond what the data shows, mark it as unsupported.
 4. Distinguish between correlation and causation — do not accept causal claims
    that only have correlational evidence.
 5. If the insight exaggerates impact, cherry-picks data, or omits material
    context, flag it clearly.
 6. If there is genuine ambiguity requiring domain expertise, choose NEEDS_REVIEW.
-7. Return only JSON matching the schema exactly.
+7. If source URLs cannot be fetched or do not support the metrics, reduce
+   evidence_support and list the issue in evidence_gaps.
+8. Return only JSON matching the schema exactly.
 
 Organization:
 {org_json}
@@ -439,6 +523,9 @@ Dashboard:
 
 Insight audit request:
 {request_json}
+
+Validator-fetched evidence summaries:
+{evidence_summaries}
 
 Return this exact JSON object:
 {{
@@ -461,6 +548,9 @@ Return this exact JSON object:
     "recommendations": ["specific improvement recommendation"],
     "required_changes": ["specific change required before approval"],
     "risks": ["specific business or analytical risk"],
+    "cited_sources": ["source URL that supports or contradicts the claim"],
+    "evidence_gaps": ["missing, unavailable, or weak evidence issue"],
+    "evidence_quality": "brief assessment of source accessibility and reliability",
     "rationale": "clear explanation for the verdict",
     "audit_summary": "executive summary of the audit finding"
   }}
@@ -484,6 +574,34 @@ Verdicts:
 """
             raw = gl.nondet.exec_prompt(prompt, response_format="json")
             normalised = self._normalise_audit_result(raw)
+            try:
+                fetched_sources = json.loads(evidence_summaries)
+                fetched_urls: typing.List[str] = []
+                fetch_gaps: typing.List[str] = []
+                for source in fetched_sources:
+                    if not isinstance(source, dict):
+                        continue
+                    url = str(source.get("url", "")).strip()
+                    status_code = self._to_int(source.get("status_code", 0), 0)
+                    if url != "" and status_code > 0 and status_code < 400:
+                        fetched_urls.append(self._limit(url, 500))
+                    elif url != "":
+                        fetch_gaps.append(self._limit(url + " fetch failed", 400))
+                if len(fetched_urls) > 0 and len(normalised["findings"]["cited_sources"]) == 0:
+                    normalised["findings"]["cited_sources"] = fetched_urls
+                if len(fetch_gaps) > 0:
+                    normalised["findings"]["evidence_gaps"] = self._list_of_strings(
+                        normalised["findings"]["evidence_gaps"] + fetch_gaps,
+                        12,
+                        400,
+                    )
+                if normalised["findings"]["evidence_quality"] == "":
+                    if len(fetched_urls) > 0:
+                        normalised["findings"]["evidence_quality"] = "Validator fetched " + str(len(fetched_urls)) + " source URL(s)."
+                    elif len(fetch_gaps) > 0:
+                        normalised["findings"]["evidence_quality"] = "No submitted source URL could be fetched by validators."
+            except Exception:
+                pass
             return json.dumps(normalised, sort_keys=True)
 
         consensus_json = gl.eq_principle.prompt_non_comparative(
@@ -492,7 +610,30 @@ Verdicts:
             criteria="The result must be valid JSON with a verdict field (APPROVED, NEEDS_REVISION, UNSUPPORTED, or NEEDS_REVIEW), 8 numeric scores between 0-100, and a findings object with rationale and audit_summary. The verdict must be logically consistent with the scores.",
         )
 
-        return self._normalise_audit_result(consensus_json)
+        final_result = self._normalise_audit_result(consensus_json)
+        source_urls: typing.List[str] = []
+        try:
+            sources = json.loads(str(request_record.get("evidence_source_urls", "[]")))
+            if isinstance(sources, list):
+                for source in sources:
+                    if len(source_urls) >= 6:
+                        break
+                    if isinstance(source, dict):
+                        url = str(source.get("url", "")).strip()
+                    else:
+                        url = str(source).strip()
+                    if url.startswith("https://") or url.startswith("http://"):
+                        source_urls.append(self._limit(url, 500))
+        except Exception:
+            source_urls = []
+        if len(source_urls) > 0 and len(final_result["findings"]["cited_sources"]) == 0 and final_result["scores"]["evidence_support"] > 0:
+            final_result["findings"]["cited_sources"] = source_urls
+        if final_result["findings"]["evidence_quality"] == "" and len(source_urls) > 0:
+            if final_result["scores"]["evidence_support"] > 0:
+                final_result["findings"]["evidence_quality"] = "Consensus decision used " + str(len(source_urls)) + " submitted validator-fetch source URL(s)."
+            else:
+                final_result["findings"]["evidence_quality"] = "Submitted source URL(s) did not provide sufficient support for the claim."
+        return final_result
 
     def _create_insight_request(
         self,
@@ -506,6 +647,7 @@ Verdicts:
         business_context: str,
         claim_hash: str,
         evidence_manifest_hash: str,
+        evidence_source_urls: str,
         submitted_at: str,
     ) -> str:
         self._require_not_paused()
@@ -515,6 +657,9 @@ Verdicts:
         self._require_non_empty(insight_text, "insight_text")
         self._require_non_empty(metrics, "metrics")
         self._require_non_empty(claim_hash, "claim_hash")
+        normalised_sources = self._normalise_evidence_sources(evidence_source_urls)
+        if normalised_sources == "[]":
+            raise gl.vm.UserError("At least one fetchable evidence source URL is required")
 
         self._assert_no_predecided_verdict(
             insight_text + " " + metrics + " " + assumptions + " " + business_context
@@ -558,6 +703,7 @@ Verdicts:
             "business_context": self._limit(business_context, 1600),
             "claim_hash": claim_hash,
             "evidence_manifest_hash": evidence_manifest_hash,
+            "evidence_source_urls": normalised_sources,
             "submitted_by": self._sender(),
             "submitted_at": submitted_at,
             "status": "PENDING",
@@ -689,8 +835,9 @@ Verdicts:
         self._require_owner()
         self._require_non_empty(new_owner, "new_owner")
         previous = self.owner
-        self.owner = new_owner
-        self._record_audit("", "", "OWNERSHIP_TRANSFERRED", previous, "Contract ownership transferred", new_owner, updated_at)
+        normalised_owner = self._normalise_wallet(new_owner)
+        self.owner = normalised_owner
+        self._record_audit("", "", "OWNERSHIP_TRANSFERRED", previous, "Contract ownership transferred", normalised_owner, updated_at)
 
     @gl.public.write
     def pause(self) -> None:
@@ -739,6 +886,10 @@ Verdicts:
         self.organizations[final_org_id] = self._json(record)
         self.org_roles[self._key2(final_org_id, self._sender())] = "OWNER"
         self.org_index["all"] = self._append_unique(self.org_index.get("all", ""), final_org_id)
+        self.user_org_index[self._sender()] = self._append_unique(
+            self.user_org_index.get(self._sender(), ""),
+            final_org_id,
+        )
 
         self._record_audit(final_org_id, "", "ORGANIZATION_CREATED", self._sender(), "Organization created", metadata_hash, created_at)
         return final_org_id
@@ -751,11 +902,16 @@ Verdicts:
         if org.get("owner", "").lower() != self._sender():
             raise gl.vm.UserError("Only org owner can manage roles")
         self._require_non_empty(wallet, "wallet")
+        normalised_wallet = self._normalise_wallet(wallet)
         allowed = ["ANALYST", "REVIEWER", "ADMIN"]
         if role.upper() not in allowed:
             raise gl.vm.UserError("Invalid role. Must be ANALYST, REVIEWER, or ADMIN")
-        self.org_roles[self._key2(org_id, wallet.lower())] = role.upper()
-        self._record_audit(org_id, "", "ORG_ROLE_ADDED", self._sender(), "Added " + role + " role for " + wallet.lower(), wallet.lower(), added_at)
+        self.org_roles[self._key2(org_id, normalised_wallet)] = role.upper()
+        self.user_org_index[normalised_wallet] = self._append_unique(
+            self.user_org_index.get(normalised_wallet, ""),
+            org_id,
+        )
+        self._record_audit(org_id, "", "ORG_ROLE_ADDED", self._sender(), "Added " + role + " role for " + normalised_wallet, normalised_wallet, added_at)
 
     @gl.public.write
     def remove_organization_role(self, org_id: str, wallet: str, removed_at: str) -> None:
@@ -764,11 +920,12 @@ Verdicts:
         org = self._load(self.organizations.get(org_id, ""))
         if org.get("owner", "").lower() != self._sender():
             raise gl.vm.UserError("Only org owner can manage roles")
-        key = self._key2(org_id, wallet.lower())
+        normalised_wallet = self._normalise_wallet(wallet)
+        key = self._key2(org_id, normalised_wallet)
         if self.org_roles.get(key, "") == "OWNER":
             raise gl.vm.UserError("Cannot remove org owner")
         self.org_roles[key] = "REMOVED"
-        self._record_audit(org_id, "", "ORG_ROLE_REMOVED", self._sender(), "Removed role for " + wallet.lower(), wallet.lower(), removed_at)
+        self._record_audit(org_id, "", "ORG_ROLE_REMOVED", self._sender(), "Removed role for " + normalised_wallet, normalised_wallet, removed_at)
 
     @gl.public.write
     def set_organization_status(self, org_id: str, status: str, updated_at: str) -> None:
@@ -790,11 +947,15 @@ Verdicts:
 
     @gl.public.view
     def get_organization_role(self, org_id: str, wallet: str) -> str:
-        return self.org_roles.get(self._key2(org_id, wallet.lower()), "")
+        return self.org_roles.get(self._key2(org_id, self._normalise_wallet(wallet)), "")
 
     @gl.public.view
     def get_organization_index(self) -> str:
         return self.org_index.get("all", "")
+
+    @gl.public.view
+    def get_user_organization_index(self, wallet: str) -> str:
+        return self.user_org_index.get(self._normalise_wallet(wallet), "")
 
     # ------------------------------------------------------------------
     # Dataset management
@@ -974,12 +1135,13 @@ Verdicts:
         business_context: str,
         claim_hash: str,
         evidence_manifest_hash: str,
+        evidence_source_urls: str,
         submitted_at: str,
     ) -> str:
         return self._create_insight_request(
             request_id, org_id, dataset_id, dashboard_id,
             insight_text, metrics, assumptions, business_context,
-            claim_hash, evidence_manifest_hash, submitted_at,
+            claim_hash, evidence_manifest_hash, evidence_source_urls, submitted_at,
         )
 
     @gl.public.write
@@ -999,13 +1161,14 @@ Verdicts:
         business_context: str,
         claim_hash: str,
         evidence_manifest_hash: str,
+        evidence_source_urls: str,
         submitted_at: str,
         adjudicated_at: str,
     ) -> str:
         final_request_id = self._create_insight_request(
             request_id, org_id, dataset_id, dashboard_id,
             insight_text, metrics, assumptions, business_context,
-            claim_hash, evidence_manifest_hash, submitted_at,
+            claim_hash, evidence_manifest_hash, evidence_source_urls, submitted_at,
         )
         return self._adjudicate_request(final_request_id, adjudicated_at)
 
@@ -1204,7 +1367,7 @@ Verdicts:
 
     @gl.public.view
     def get_reviewer_reputation(self, org_id: str, reviewer_wallet: str) -> str:
-        return self.reviewer_reputation.get(self._key2(org_id, reviewer_wallet.lower()), "")
+        return self.reviewer_reputation.get(self._key2(org_id, self._normalise_wallet(reviewer_wallet)), "")
 
     @gl.public.view
     def is_claim_hash_approved(self, claim_hash: str) -> str:

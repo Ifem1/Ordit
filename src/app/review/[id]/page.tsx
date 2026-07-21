@@ -10,7 +10,6 @@ import Textarea from "@/components/ui/Textarea";
 import { VerdictBadge } from "@/components/ui/Badge";
 import { humanReviewDecision } from "@/lib/genlayer/orditContract";
 import { getUserWalletAddress } from "@/lib/ordit/walletAddress";
-import { createClient } from "@/lib/supabase/client";
 import TxLink from "@/components/ordit/TxLink";
 import { ShieldCheck, CheckCircle } from "lucide-react";
 
@@ -25,7 +24,6 @@ type ReviewVerdict = "APPROVED" | "NEEDS_REVISION" | "REJECTED";
 export default function HumanReviewPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const supabase = createClient();
   const [verdict, setVerdict] = useState<ReviewVerdict | null>(null);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,22 +35,11 @@ export default function HumanReviewPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
       const walletAddress = await getUserWalletAddress();
-
-      const { data: req } = await supabase
-        .from("insight_audit_requests")
-        .select("onchain_id")
-        .eq("id", id)
-        .single();
-
-      if (!req) throw new Error("Request not found");
 
       const res = await humanReviewDecision(
         {
-          request_id: req.onchain_id,
+          request_id: id,
           final_verdict: verdict as "APPROVED" | "UNSUPPORTED" | "NEEDS_REVISION",
           notes,
           review_evidence_hash: "",
@@ -61,28 +48,6 @@ export default function HumanReviewPage() {
         walletAddress,
       );
       setResult(res);
-
-      // Mirror to Supabase
-      await supabase.from("human_reviews").insert({
-        request_id: id,
-        reviewer_id: user.id,
-        verdict,
-        notes,
-        tx_hash: res.tx_hash,
-        explorer_url: res.explorer_url,
-      });
-
-      const newStatus = verdict === "APPROVED" ? "ADJUDICATED" : verdict === "REJECTED" ? "BLOCKED" : "NEEDS_REVIEW";
-      const newVerdict = verdict === "APPROVED" ? "HUMAN_APPROVED" : verdict === "REJECTED" ? "HUMAN_REJECTED" : null;
-
-      await supabase
-        .from("insight_audit_requests")
-        .update({
-          status: newStatus,
-          ...(newVerdict ? { verdict: newVerdict } : {}),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Review submission failed");
     } finally {

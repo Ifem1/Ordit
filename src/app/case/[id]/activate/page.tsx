@@ -8,14 +8,12 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import { markBusinessDecisionActivated } from "@/lib/genlayer/orditContract";
 import { getUserWalletAddress } from "@/lib/ordit/walletAddress";
-import { createClient } from "@/lib/supabase/client";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 import TxLink from "@/components/ordit/TxLink";
 
 export default function ActivateDecisionPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ tx_hash: string; explorer_url: string } | null>(null);
@@ -24,36 +22,9 @@ export default function ActivateDecisionPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
       const walletAddress = await getUserWalletAddress();
-
-      // Get onchain_id
-      const { data: req } = await supabase
-        .from("insight_audit_requests")
-        .select("onchain_id")
-        .eq("id", id)
-        .single();
-
-      if (!req) throw new Error("Request not found");
-
-      const res = await markBusinessDecisionActivated(req.onchain_id, "Activated via Ordit dashboard", walletAddress);
+      const res = await markBusinessDecisionActivated(id, "Activated via Ordit dashboard", walletAddress);
       setResult(res);
-
-      // Update Supabase mirror
-      await supabase
-        .from("insight_audit_requests")
-        .update({ status: "ACTIVATED", updated_at: new Date().toISOString() })
-        .eq("id", id);
-
-      await supabase.from("activated_decisions").insert({
-        request_id: id,
-        onchain_id: req.onchain_id,
-        activated_by: user.id,
-        tx_hash: res.tx_hash,
-        explorer_url: res.explorer_url,
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Activation failed");
     } finally {

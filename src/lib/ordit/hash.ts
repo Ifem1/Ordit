@@ -11,11 +11,15 @@ export interface ClaimPacketInput {
   assumptions: string;
   business_context: string;
   evidence_manifest?: string;
+  evidence_sources?: Array<{ label: string; url: string }>;
   nonce: string;
 }
 
 export function buildClaimPacket(
-  form: SubmitInsightAuditForm & { evidence_manifest?: string },
+  form: Omit<SubmitInsightAuditForm, "evidence_sources"> & {
+    evidence_manifest?: string;
+    evidence_sources?: SubmitInsightAuditForm["evidence_sources"];
+  },
   nonce?: string,
 ): ClaimPacketInput {
   return {
@@ -27,6 +31,7 @@ export function buildClaimPacket(
     assumptions: form.assumptions.trim(),
     business_context: form.business_context.trim(),
     evidence_manifest: form.evidence_manifest ?? "",
+    evidence_sources: form.evidence_sources ?? [],
     nonce: nonce ?? Date.now().toString(),
   };
 }

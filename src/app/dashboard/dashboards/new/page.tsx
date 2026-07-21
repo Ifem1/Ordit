@@ -11,10 +11,9 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import { registerDashboard } from "@/lib/genlayer/orditContract";
-import { syncDashboard } from "@/lib/ordit/contractSync";
 import { hashClaimPacket } from "@/lib/ordit/hash";
 import { getUserWalletAddress } from "@/lib/ordit/walletAddress";
-import { createClient } from "@/lib/supabase/client";
+import { getOrganizationsForWallet } from "@/lib/ordit/contractQueries";
 import { MonitorDot, CheckCircle } from "lucide-react";
 
 const schema = z.object({
@@ -43,20 +42,16 @@ export default function NewDashboardPage() {
   });
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.from("organizations").select("id, name, onchain_id").then(({ data }) => {
-      if (data) setOrgs(data.map((o) => ({ value: o.onchain_id, label: o.name })));
-    });
+    getUserWalletAddress()
+      .then((wallet) => getOrganizationsForWallet(wallet))
+      .then((data) => setOrgs(data.map((o) => ({ value: o.id, label: o.name }))))
+      .catch(() => setOrgs([]));
   }, []);
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     setError(null);
-    const supabase = createClient();
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
       const walletAddress = await getUserWalletAddress();
 
       const dashboardId = crypto.randomUUID();
@@ -69,10 +64,10 @@ export default function NewDashboardPage() {
         metrics: data.report_type,
         assumptions: data.reporting_period,
         business_context: "",
-        nonce: Date.now().toString(),
+        nonce: dashboardId,
       });
 
-      const { tx_hash } = await registerDashboard(
+      await registerDashboard(
         {
           dashboard_id: dashboardId,
           org_id: data.org_id,
@@ -84,16 +79,6 @@ export default function NewDashboardPage() {
         },
         walletAddress,
       );
-
-      const dashboard = { id: dashboardId, org_id: data.org_id, name: data.name, report_type: data.report_type, reporting_period: data.reporting_period, metadata_hash: metadataHash, status: "ACTIVE" as const, created_at: Date.now(), registered_at: new Date().toISOString() };
-
-      const { data: orgRow } = await supabase
-        .from("organizations")
-        .select("id")
-        .eq("onchain_id", data.org_id)
-        .single();
-
-      await syncDashboard(dashboard, tx_hash, orgRow?.id ?? "");
       setSuccess(true);
       setTimeout(() => router.push("/dashboard/dashboards"), 2000);
     } catch (err) {
@@ -109,7 +94,7 @@ export default function NewDashboardPage() {
         <Card className="text-center max-w-sm border-emerald-500/20">
           <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-white mb-2">Dashboard Registered</h2>
-          <p className="text-slate-400 text-sm">Registered on GenLayer and mirrored to Supabase.</p>
+          <p className="text-slate-400 text-sm">Registered directly on the Ordit contract.</p>
         </Card>
       </div>
     );

@@ -1,5 +1,3 @@
-import type { EvidenceFile } from "@/types";
-
 export interface EvidenceManifest {
   files: Array<{
     name: string;
@@ -12,7 +10,15 @@ export interface EvidenceManifest {
   manifest_hash: string;
 }
 
-export function buildEvidenceManifest(files: EvidenceFile[]): EvidenceManifest {
+export interface EvidenceFileLike {
+  file_name: string;
+  file_size: number;
+  file_type: string;
+  file_url: string;
+  created_at: string;
+}
+
+export function buildEvidenceManifest(files: EvidenceFileLike[]): EvidenceManifest {
   const fileEntries = files.map((f) => ({
     name: f.file_name,
     size: f.file_size,

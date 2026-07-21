@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,11 +12,14 @@ import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
 import Select from "@/components/ui/Select";
 import { submitAndAuditInsight } from "@/lib/genlayer/orditContract";
-import { syncInsightRequest, logAuditEvent } from "@/lib/ordit/contractSync";
 import { buildClaimPacket, hashClaimPacket } from "@/lib/ordit/hash";
 import { getUserWalletAddress } from "@/lib/ordit/walletAddress";
-import { createClient } from "@/lib/supabase/client";
-import { FileSearch, Upload, Cpu, Zap } from "lucide-react";
+import {
+  getDashboardsForOrganizations,
+  getDatasetsForOrganizations,
+  getOrganizationsForWallet,
+} from "@/lib/ordit/contractQueries";
+import { FileSearch, Cpu, Zap, Link2, Plus, Trash2 } from "lucide-react";
 
 const schema = z.object({
   org_id: z.string().min(1, "Select an organization"),
@@ -29,16 +32,16 @@ const schema = z.object({
 });
 
 type FormData = z.infer<typeof schema>;
+type EvidenceSource = { label: string; url: string };
 
 export default function NewInsightAuditPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orgs, setOrgs] = useState<{ value: string; label: string }[]>([]);
-  const [datasets, setDatasets] = useState<{ value: string; label: string }[]>([]);
-  const [dashboards, setDashboards] = useState<{ value: string; label: string }[]>([]);
-  const [files, setFiles] = useState<File[]>([]);
+  const [datasets, setDatasets] = useState<{ value: string; label: string; orgId: string }[]>([]);
+  const [dashboards, setDashboards] = useState<{ value: string; label: string; orgId: string }[]>([]);
+  const [evidenceSources, setEvidenceSources] = useState<EvidenceSource[]>([{ label: "Primary source", url: "" }]);
   const [step, setStep] = useState<"form" | "submitting" | "consensus" | "done">("form");
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
@@ -48,30 +51,36 @@ export default function NewInsightAuditPage() {
   const [activeOrg, setActiveOrg] = useState<string>("");
 
   useEffect(() => {
-    supabase.from("organizations").select("id, name, onchain_id").then(({ data }) => {
-      if (data) setOrgs(data.map((o) => ({ value: o.id, label: o.name })));
-    });
+    async function load() {
+      try {
+        const wallet = await getUserWalletAddress();
+        const ownedOrgs = await getOrganizationsForWallet(wallet);
+        const orgIds = ownedOrgs.map((org) => org.id);
+        const [orgDatasets, orgDashboards] = await Promise.all([
+          getDatasetsForOrganizations(orgIds),
+          getDashboardsForOrganizations(orgIds),
+        ]);
+        setOrgs(ownedOrgs.map((o) => ({ value: o.id, label: o.name })));
+        setDatasets(orgDatasets.map((d) => ({ value: d.id, label: d.name, orgId: d.org_id })));
+        setDashboards(orgDashboards.map((d) => ({ value: d.id, label: d.name, orgId: d.org_id })));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Connect a wallet to load contract data");
+      }
+    }
+    load();
   }, []);
 
-  useEffect(() => {
-    if (!activeOrg) return;
-    setDatasets([]);
-    setDashboards([]);
-    supabase
-      .from("datasets")
-      .select("id, name, onchain_id")
-      .eq("org_id", activeOrg)
-      .then(({ data }) => {
-        if (data) setDatasets(data.map((d) => ({ value: d.onchain_id, label: d.name })));
-      });
-    supabase
-      .from("dashboards")
-      .select("id, name, onchain_id")
-      .eq("org_id", activeOrg)
-      .then(({ data }) => {
-        if (data) setDashboards(data.map((d) => ({ value: d.onchain_id, label: d.name })));
-      });
-  }, [activeOrg]);
+  const filteredDatasets = datasets.filter((d) => d.orgId === activeOrg);
+  const filteredDashboards = dashboards.filter((d) => d.orgId === activeOrg);
+
+  const updateEvidenceSource = (index: number, patch: Partial<EvidenceSource>) => {
+    setEvidenceSources((sources) => sources.map((source, i) => (i === index ? { ...source, ...patch } : source)));
+  };
+
+  const validEvidenceSources = () =>
+    evidenceSources
+      .map((source) => ({ label: source.label.trim(), url: source.url.trim() }))
+      .filter((source) => source.url.startsWith("https://") || source.url.startsWith("http://"));
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
@@ -79,44 +88,25 @@ export default function NewInsightAuditPage() {
     setStep("submitting");
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
       const walletAddress = await getUserWalletAddress();
+      const sources = validEvidenceSources();
+      if (!sources.length) throw new Error("Add at least one http(s) evidence source URL validators can fetch.");
 
-      // Resolve org onchain_id from Supabase UUID
-      const { data: orgRow } = await supabase
-        .from("organizations")
-        .select("onchain_id")
-        .eq("id", data.org_id)
-        .single();
-      const orgOnchainId = orgRow?.onchain_id ?? data.org_id;
-
-      // Upload evidence files
-      const evidenceManifest: string[] = [];
-      for (const file of files) {
-        const path = `evidence/${user.id}/${Date.now()}_${file.name}`;
-        const { error: uploadError } = await supabase.storage.from("evidence").upload(path, file);
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage.from("evidence").getPublicUrl(path);
-          evidenceManifest.push(urlData.publicUrl);
-        }
-      }
-
+      const evidenceSourceJson = JSON.stringify(sources);
       const packet = buildClaimPacket({
         ...data,
-        org_id: orgOnchainId,
-        evidence_manifest: evidenceManifest.join(","),
+        evidence_manifest: evidenceSourceJson,
+        evidence_sources: sources,
       });
       const claimHash = await hashClaimPacket(packet);
 
       setStep("consensus");
 
       const ts = new Date().toISOString();
-      const { request, tx_hash } = await submitAndAuditInsight(
+      const { request } = await submitAndAuditInsight(
         {
           request_id: "",
-          org_id: orgOnchainId,
+          org_id: data.org_id,
           dataset_id: data.dataset_id,
           dashboard_id: data.dashboard_id,
           insight_text: data.insight_text,
@@ -124,31 +114,16 @@ export default function NewInsightAuditPage() {
           assumptions: data.assumptions,
           business_context: data.business_context,
           claim_hash: claimHash,
-          evidence_manifest_hash: evidenceManifest.join(","),
+          evidence_manifest_hash: claimHash,
+          evidence_source_urls: evidenceSourceJson,
           submitted_at: ts,
           adjudicated_at: ts,
         },
         walletAddress,
       );
 
-      await syncInsightRequest(request, tx_hash, user.id, data.org_id);
-
-      // Navigate to case file
-      const { data: caseRow } = await supabase
-        .from("insight_audit_requests")
-        .select("id")
-        .eq("onchain_id", request.id)
-        .single();
-
-      const supabaseRequestId = caseRow?.id ?? request.id;
-
-      // Log audit events
-      await logAuditEvent(supabaseRequestId, "INSIGHT_SUBMITTED", walletAddress, { org_id: orgOnchainId, dataset_id: data.dataset_id, dashboard_id: data.dashboard_id, claim_hash: claimHash }, tx_hash);
-      await logAuditEvent(supabaseRequestId, "INSIGHT_ADJUDICATED", "GENLAYER_CONSENSUS", { verdict: request.status, decision_id: request.id }, tx_hash);
-
       setStep("done");
-
-      router.push(`/case/${caseRow?.id ?? request.id}`);
+      router.push(`/case/${request.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
       setStep("form");
@@ -160,7 +135,7 @@ export default function NewInsightAuditPage() {
   const stepLabels = {
     form: null,
     submitting: "Submitting insight to OrditContract...",
-    consensus: "GenLayer validators reaching consensus...",
+    consensus: "GenLayer validators fetching evidence and reaching consensus...",
     done: "Consensus complete, redirecting...",
   };
 
@@ -169,7 +144,7 @@ export default function NewInsightAuditPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white mb-1">Submit Insight Audit</h1>
         <p className="text-sm text-slate-400">
-          Calls <code className="text-indigo-400">submit_and_audit_insight</code> - GenLayer validators will determine whether your insight is supported by the data.
+          Validators fetch the evidence URLs inside GenVM before deciding whether the insight is supported.
         </p>
       </div>
 
@@ -190,7 +165,7 @@ export default function NewInsightAuditPage() {
             </div>
             <div>
               <p className="text-sm font-medium text-white">Insight Audit Form</p>
-              <p className="text-xs text-slate-500">All fields are required for consensus</p>
+              <p className="text-xs text-slate-500">Evidence must be reachable by GenLayer validators</p>
             </div>
           </div>
 
@@ -205,84 +180,61 @@ export default function NewInsightAuditPage() {
                 const val = e.target.value;
                 setActiveOrg(val);
                 setValue("org_id", val, { shouldValidate: true });
+                setValue("dataset_id", "");
+                setValue("dashboard_id", "");
               }}
             />
-            <Select
-              label="Dataset"
-              options={datasets}
-              placeholder="Select..."
-              error={errors.dataset_id?.message}
-              {...register("dataset_id")}
-            />
-            <Select
-              label="Dashboard"
-              options={dashboards}
-              placeholder="Select..."
-              error={errors.dashboard_id?.message}
-              {...register("dashboard_id")}
-            />
+            <Select label="Dataset" options={filteredDatasets} placeholder="Select..." error={errors.dataset_id?.message} {...register("dataset_id")} />
+            <Select label="Dashboard" options={filteredDashboards} placeholder="Select..." error={errors.dashboard_id?.message} {...register("dashboard_id")} />
           </div>
 
-          <Textarea
-            label="AI-Generated Insight"
-            placeholder="Paste the exact AI-generated insight or narrative here..."
-            rows={5}
-            error={errors.insight_text?.message}
-            hint="This is the claim being audited by GenLayer consensus"
-            {...register("insight_text")}
-          />
+          <Textarea label="AI-Generated Insight" placeholder="Paste the exact AI-generated insight or narrative here..." rows={5} error={errors.insight_text?.message} {...register("insight_text")} />
+          <Textarea label="Claimed Metrics" placeholder="Revenue: $4.2M (+18% YoY), Units sold: 12,400..." rows={4} error={errors.metrics?.message} hint="These claims are checked against validator-fetched sources" {...register("metrics")} />
+          <Textarea label="Stated Assumptions" placeholder="Seasonality not adjusted, CAC based on last 90 days only..." rows={3} error={errors.assumptions?.message} {...register("assumptions")} />
+          <Textarea label="Business Context" placeholder="This report will be used to determine Q4 budget allocation..." rows={3} error={errors.business_context?.message} {...register("business_context")} />
 
-          <Textarea
-            label="Underlying Metrics"
-            placeholder="Revenue: $4.2M (+18% YoY), Units sold: 12,400, Conversion: 3.2%..."
-            rows={4}
-            error={errors.metrics?.message}
-            hint="The raw data that the AI insight is based on"
-            {...register("metrics")}
-          />
-
-          <Textarea
-            label="Stated Assumptions"
-            placeholder="Seasonality not adjusted, CAC based on last 90 days only..."
-            rows={3}
-            error={errors.assumptions?.message}
-            {...register("assumptions")}
-          />
-
-          <Textarea
-            label="Business Context"
-            placeholder="This report will be used to determine Q4 budget allocation..."
-            rows={3}
-            error={errors.business_context?.message}
-            {...register("business_context")}
-          />
-
-          {/* Evidence upload */}
-          <div>
-            <label className="text-sm font-medium text-slate-300 mb-1.5 block">
-              Evidence Files <span className="text-slate-600">(optional)</span>
-            </label>
-            <label className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 border-dashed cursor-pointer hover:border-teal-500/40 transition-colors">
-              <Upload className="w-4 h-4 text-slate-400" />
-              <span className="text-sm text-slate-400">
-                {files.length > 0
-                  ? `${files.length} file(s) selected`
-                  : "CSV, Excel, PDF reports"}
-              </span>
-              <input
-                type="file"
-                accept=".csv,.xlsx,.xls,.pdf"
-                multiple
-                className="hidden"
-                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-              />
-            </label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-slate-300">Evidence Sources</label>
+              <button
+                type="button"
+                onClick={() => setEvidenceSources((sources) => [...sources, { label: "", url: "" }])}
+                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                Add source
+              </button>
+            </div>
+            {evidenceSources.map((source, index) => (
+              <div key={index} className="grid grid-cols-1 md:grid-cols-[160px_1fr_32px] gap-2">
+                <Input
+                  placeholder="Label"
+                  value={source.label}
+                  onChange={(e) => updateEvidenceSource(index, { label: e.target.value })}
+                />
+                <Input
+                  placeholder="https://public-report-or-api.example/data"
+                  value={source.url}
+                  onChange={(e) => updateEvidenceSource(index, { url: e.target.value })}
+                />
+                <button
+                  type="button"
+                  onClick={() => setEvidenceSources((sources) => sources.filter((_, i) => i !== index))}
+                  className="h-10 rounded-lg border border-white/10 text-slate-500 hover:text-red-400 hover:border-red-500/30 flex items-center justify-center"
+                  aria-label="Remove source"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <Link2 className="w-3 h-3" />
+              Use public URLs, API endpoints, IPFS/Arweave gateways, or signed report links that validators can independently fetch.
+            </div>
           </div>
 
           {error && (
-            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
-              {error}
-            </div>
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">{error}</div>
           )}
 
           <div className="flex gap-3 pt-2">
@@ -297,4 +249,3 @@ export default function NewInsightAuditPage() {
     </div>
   );
 }
-

@@ -1,64 +1,96 @@
+"use client";
 export const dynamic = "force-dynamic";
 
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  Building2,
-  Database,
-  MonitorDot,
-  FileSearch,
-  CheckCircle,
-  Clock,
-  AlertTriangle,
-  ArrowRight,
-} from "lucide-react";
+import { Building2, Database, MonitorDot, FileSearch, ArrowRight, Wallet } from "lucide-react";
 import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
 import { VerdictBadge } from "@/components/ui/Badge";
-import TxLink from "@/components/ordit/TxLink";
+import { connectInjectedWallet, getConnectedWallet } from "@/lib/wallet/injected";
+import {
+  getDashboardsForOrganizations,
+  getDatasetsForOrganizations,
+  getOrganizationsForWallet,
+  getRequestsForOrganizations,
+} from "@/lib/ordit/contractQueries";
+import type { ContractDashboard, ContractDataset, ContractOrganization, InsightAuditRequest, InsightDecision } from "@/types";
 
-export default async function DashboardPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/auth");
+type RequestWithDecision = InsightAuditRequest & { decision?: InsightDecision };
 
-  // Fetch summary counts
-  const [
-    { count: orgCount },
-    { count: datasetCount },
-    { count: dashboardCount },
-    { count: requestCount },
-    { data: recentRequests },
-  ] = await Promise.all([
-    supabase.from("organizations").select("*", { count: "exact", head: true }).eq("owner_id", user.id),
-    supabase.from("datasets").select("*", { count: "exact", head: true }),
-    supabase.from("dashboards").select("*", { count: "exact", head: true }),
-    supabase.from("insight_audit_requests").select("*", { count: "exact", head: true }).eq("submitter_id", user.id),
-    supabase
-      .from("insight_audit_requests")
-      .select("id, insight_text, status, verdict, tx_hash, explorer_url, created_at")
-      .eq("submitter_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(5),
-  ]);
+export default function DashboardPage() {
+  const [wallet, setWallet] = useState<string | null>(null);
+  const [orgs, setOrgs] = useState<ContractOrganization[]>([]);
+  const [datasets, setDatasets] = useState<ContractDataset[]>([]);
+  const [dashboards, setDashboards] = useState<ContractDashboard[]>([]);
+  const [requests, setRequests] = useState<RequestWithDecision[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (address?: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const connected = address ?? (await getConnectedWallet())?.address ?? null;
+      setWallet(connected);
+      if (!connected) return;
+      const ownedOrgs = await getOrganizationsForWallet(connected);
+      const orgIds = ownedOrgs.map((org) => org.id);
+      const [orgDatasets, orgDashboards, orgRequests] = await Promise.all([
+        getDatasetsForOrganizations(orgIds),
+        getDashboardsForOrganizations(orgIds),
+        getRequestsForOrganizations(orgIds),
+      ]);
+      setOrgs(ownedOrgs);
+      setDatasets(orgDatasets);
+      setDashboards(orgDashboards);
+      setRequests(orgRequests);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to read contract state");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, []);
 
   const stats = [
-    { label: "Organizations", value: orgCount ?? 0, icon: Building2, href: "/organization", color: "text-indigo-400", bg: "bg-indigo-500/10" },
-    { label: "Datasets", value: datasetCount ?? 0, icon: Database, href: "/dataset", color: "text-teal-400", bg: "bg-teal-500/10" },
-    { label: "Dashboards", value: dashboardCount ?? 0, icon: MonitorDot, href: "/dashboard/dashboards", color: "text-purple-400", bg: "bg-purple-500/10" },
-    { label: "Audit Requests", value: requestCount ?? 0, icon: FileSearch, href: "/insight", color: "text-amber-400", bg: "bg-amber-500/10" },
+    { label: "Organizations", value: orgs.length, icon: Building2, href: "/organization", color: "text-indigo-400", bg: "bg-indigo-500/10" },
+    { label: "Datasets", value: datasets.length, icon: Database, href: "/dataset", color: "text-teal-400", bg: "bg-teal-500/10" },
+    { label: "Dashboards", value: dashboards.length, icon: MonitorDot, href: "/dashboard/dashboards", color: "text-purple-400", bg: "bg-purple-500/10" },
+    { label: "Audit Requests", value: requests.length, icon: FileSearch, href: "/insight", color: "text-amber-400", bg: "bg-amber-500/10" },
   ];
+
+  if (!wallet && !loading) {
+    return (
+      <Card className="max-w-lg">
+        <Wallet className="w-8 h-8 text-teal-400 mb-4" />
+        <h1 className="text-xl font-semibold text-white mb-2">Connect wallet</h1>
+        <p className="text-sm text-slate-400 mb-5">
+          Ordit reads your organizations, audits, and verdicts directly from the GenLayer contract.
+        </p>
+        <Button onClick={async () => load((await connectInjectedWallet()).address)}>
+          <Wallet className="w-4 h-4" />
+          Connect Rabby / MetaMask
+        </Button>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-white mb-1">Dashboard</h1>
-        <p className="text-slate-400 text-sm">
-          GenLayer consensus verification overview
-        </p>
+        <p className="text-slate-400 text-sm">Contract-backed GenLayer verification overview</p>
       </div>
 
-      {/* Stats */}
+      {error && (
+        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">{error}</div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((s) => (
           <Link key={s.label} href={s.href}>
@@ -67,7 +99,7 @@ export default async function DashboardPage() {
                 <s.icon className={`w-4 h-4 ${s.color}`} />
               </div>
               <div>
-                <div className="text-2xl font-bold text-white">{s.value}</div>
+                <div className="text-2xl font-bold text-white">{loading ? "..." : s.value}</div>
                 <div className="text-xs text-slate-400">{s.label}</div>
               </div>
             </Card>
@@ -75,90 +107,49 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* Quick actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Link href="/organization/new">
-          <Card hover className="flex items-center gap-3 border-indigo-500/10 hover:border-indigo-500/30">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/15 flex items-center justify-center">
-              <Building2 className="w-4 h-4 text-indigo-400" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-white">New Organization</div>
-              <div className="text-xs text-slate-500">Register on-chain</div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-500" />
-          </Card>
-        </Link>
-        <Link href="/dataset/new">
-          <Card hover className="flex items-center gap-3 border-teal-500/10 hover:border-teal-500/30">
-            <div className="w-8 h-8 rounded-lg bg-teal-500/15 flex items-center justify-center">
-              <Database className="w-4 h-4 text-teal-400" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-white">Register Dataset</div>
-              <div className="text-xs text-slate-500">Upload & register</div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-500" />
-          </Card>
-        </Link>
-        <Link href="/insight/new">
-          <Card hover className="flex items-center gap-3 border-purple-500/10 hover:border-purple-500/30">
-            <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center">
-              <FileSearch className="w-4 h-4 text-purple-400" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-white">Submit Audit</div>
-              <div className="text-xs text-slate-500">Run consensus</div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-slate-500" />
-          </Card>
-        </Link>
+        {[
+          { href: "/organization/new", icon: Building2, title: "New Organization", sub: "Register on-chain", color: "text-indigo-400", bg: "bg-indigo-500/15" },
+          { href: "/dataset/new", icon: Database, title: "Register Dataset", sub: "Anchor source context", color: "text-teal-400", bg: "bg-teal-500/15" },
+          { href: "/insight/new", icon: FileSearch, title: "Submit Audit", sub: "Validators fetch evidence", color: "text-purple-400", bg: "bg-purple-500/15" },
+        ].map((item) => (
+          <Link key={item.href} href={item.href}>
+            <Card hover className="flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-lg ${item.bg} flex items-center justify-center`}>
+                <item.icon className={`w-4 h-4 ${item.color}`} />
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-medium text-white">{item.title}</div>
+                <div className="text-xs text-slate-500">{item.sub}</div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-slate-500" />
+            </Card>
+          </Link>
+        ))}
       </div>
 
-      {/* Recent audit requests */}
       <Card>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-semibold text-white">Recent Audit Requests</h2>
           <Link href="/insight" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-            View all →
+            View all
           </Link>
         </div>
-
-        {!recentRequests?.length ? (
+        {!requests.length ? (
           <div className="text-center py-10 text-slate-500">
             <FileSearch className="w-8 h-8 mx-auto mb-2 opacity-40" />
             <p className="text-sm">No audit requests yet.</p>
-            <Link href="/insight/new">
-              <button className="mt-3 text-indigo-400 text-sm hover:text-indigo-300 transition-colors">
-                Submit your first insight →
-              </button>
-            </Link>
           </div>
         ) : (
           <div className="space-y-3">
-            {recentRequests.map((req) => (
+            {requests.slice(0, 5).map((req) => (
               <Link key={req.id} href={`/case/${req.id}`}>
                 <div className="flex items-center gap-4 p-3 rounded-xl hover:bg-white/[0.04] transition-colors group">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-slate-200 truncate group-hover:text-white transition-colors">
-                      {req.insight_text}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      {req.tx_hash && (
-                        <TxLink txHash={req.tx_hash} explorerUrl={req.explorer_url} />
-                      )}
-                      <span className="text-xs text-slate-600">
-                        {new Date(req.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
+                    <p className="text-sm text-slate-200 truncate group-hover:text-white transition-colors">{req.insight_text}</p>
+                    <p className="text-xs text-slate-600 mt-1 font-mono">{req.id}</p>
                   </div>
-                  {req.verdict ? (
-                    <VerdictBadge verdict={req.verdict} />
-                  ) : (
-                    <span className="flex items-center gap-1 text-xs text-slate-500">
-                      <Clock className="w-3 h-3 animate-pulse" /> Pending
-                    </span>
-                  )}
+                  {req.decision?.verdict ? <VerdictBadge verdict={req.decision.verdict} /> : <span className="text-xs text-slate-500">{req.status}</span>}
                 </div>
               </Link>
             ))}

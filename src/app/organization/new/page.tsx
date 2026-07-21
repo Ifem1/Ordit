@@ -11,10 +11,8 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import { createOrganization } from "@/lib/genlayer/orditContract";
-import { syncOrganization } from "@/lib/ordit/contractSync";
 import { hashClaimPacket } from "@/lib/ordit/hash";
 import { getUserWalletAddress } from "@/lib/ordit/walletAddress";
-import { createClient } from "@/lib/supabase/client";
 import { Building2, CheckCircle } from "lucide-react";
 
 const schema = z.object({
@@ -31,7 +29,6 @@ const INDUSTRIES = [
 
 export default function NewOrganizationPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -44,9 +41,6 @@ export default function NewOrganizationPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
       const walletAddress = await getUserWalletAddress();
 
       // Generate org_id client-side — the contract stores whatever we pass
@@ -61,17 +55,14 @@ export default function NewOrganizationPage() {
         metrics: data.industry,
         assumptions: "",
         business_context: "",
-        nonce: Date.now().toString(),
+        nonce: orgId,
       });
 
-      const { tx_hash } = await createOrganization(
+      await createOrganization(
         { org_id: orgId, name: data.name, industry: data.industry, metadata_hash: metadataHash, created_at: new Date().toISOString() },
         walletAddress,
       );
 
-      // Build org object directly — don't rely on contract return value
-      const org = { id: orgId, name: data.name, industry: data.industry, metadata_hash: metadataHash, owner: walletAddress, status: "ACTIVE" as const, created_at: Date.now() };
-      await syncOrganization(org, tx_hash, user.id);
       setSuccess(true);
       setTimeout(() => router.push("/organization"), 2000);
     } catch (err) {
@@ -87,7 +78,7 @@ export default function NewOrganizationPage() {
         <Card className="text-center max-w-sm border-emerald-500/20">
           <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-white mb-2">Organization Created</h2>
-          <p className="text-slate-400 text-sm">Registered on GenLayer and mirrored to Supabase.</p>
+          <p className="text-slate-400 text-sm">Registered directly on the Ordit contract.</p>
         </Card>
       </div>
     );
@@ -142,4 +133,3 @@ export default function NewOrganizationPage() {
     </div>
   );
 }
-

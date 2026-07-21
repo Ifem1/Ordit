@@ -1,36 +1,63 @@
+"use client";
 export const dynamic = "force-dynamic";
 
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Database, Plus, ExternalLink } from "lucide-react";
+import { Database, Plus, Wallet } from "lucide-react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { connectInjectedWallet, getConnectedWallet } from "@/lib/wallet/injected";
+import { getDatasetsForOrganizations, getOrganizationsForWallet } from "@/lib/ordit/contractQueries";
+import type { ContractDataset } from "@/types";
 
-export default async function DatasetsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/auth");
+export default function DatasetsPage() {
+  const [wallet, setWallet] = useState<string | null>(null);
+  const [datasets, setDatasets] = useState<ContractDataset[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const { data: datasets } = await supabase
-    .from("datasets")
-    .select("*, organizations(name)")
-    .order("created_at", { ascending: false });
+  const load = async (address?: string) => {
+    setLoading(true);
+    const connected = address ?? (await getConnectedWallet())?.address ?? null;
+    setWallet(connected);
+    if (connected) {
+      const orgs = await getOrganizationsForWallet(connected);
+      setDatasets(await getDatasetsForOrganizations(orgs.map((org) => org.id)));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, []);
+
+  if (!wallet && !loading) {
+    return (
+      <Card className="max-w-lg">
+        <Wallet className="w-8 h-8 text-teal-400 mb-4" />
+        <h1 className="text-xl font-semibold text-white mb-2">Connect wallet</h1>
+        <p className="text-sm text-slate-400 mb-5">Datasets are read from organizations visible to your wallet.</p>
+        <Button onClick={async () => load((await connectInjectedWallet()).address)}>Connect Wallet</Button>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">Datasets</h1>
-          <p className="text-sm text-slate-400">Registered data sources for insight auditing</p>
+          <p className="text-sm text-slate-400">On-chain data source contexts for insight auditing</p>
         </div>
         <Link href="/dataset/new">
           <Button><Plus className="w-4 h-4" /> Register Dataset</Button>
         </Link>
       </div>
 
-      {!datasets?.length ? (
+      {loading ? (
+        <p className="text-slate-500 text-sm">Reading contract state...</p>
+      ) : !datasets.length ? (
         <Card className="text-center py-16">
           <Database className="w-10 h-10 mx-auto mb-3 text-slate-600" />
           <p className="text-slate-400 mb-4">No datasets registered yet.</p>
@@ -49,18 +76,9 @@ export default async function DatasetsPage() {
                     <p className="text-sm font-medium text-white">{d.name}</p>
                     <Badge variant={d.status === "ACTIVE" ? "success" : "muted"}>{d.status}</Badge>
                   </div>
-                  <p className="text-xs text-slate-500 truncate">
-                    {(d.organizations as { name?: string } | null)?.name ?? "—"} · Source: {d.source}
-                  </p>
+                  <p className="text-xs text-slate-500 truncate">Source: {d.source}</p>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-600 shrink-0">
-                  <span className="font-mono">{d.onchain_id}</span>
-                  {d.explorer_url && (
-                    <a href={d.explorer_url} target="_blank" rel="noopener noreferrer" className="text-teal-500 hover:text-teal-400">
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-                </div>
+                <span className="font-mono text-xs text-slate-600 shrink-0">{d.id}</span>
               </div>
             </Card>
           ))}

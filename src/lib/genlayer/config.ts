@@ -3,7 +3,6 @@ export const GENLAYER_CONFIG = {
   rpcUrl: process.env.NEXT_PUBLIC_GENLAYER_RPC_URL ?? "https://studio.genlayer.com/api",
   explorerUrl: process.env.NEXT_PUBLIC_GENLAYER_EXPLORER_URL ?? "https://explorer-studio.genlayer.com",
   contractAddress: process.env.NEXT_PUBLIC_ORDIT_CONTRACT_ADDRESS ?? "",
-  // Fallback sender for read-only calls; users should set their wallet address in profile settings
   defaultSender: process.env.NEXT_PUBLIC_GENLAYER_DEFAULT_SENDER ?? "0x0000000000000000000000000000000000000001",
 } as const;
 

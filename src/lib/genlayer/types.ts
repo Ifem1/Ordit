@@ -75,6 +75,7 @@ export interface SubmitInsightAuditParams {
   business_context: string;
   claim_hash: string;
   evidence_manifest_hash: string;
+  evidence_source_urls: string;
   submitted_at: string;
   adjudicated_at: string;
 }
