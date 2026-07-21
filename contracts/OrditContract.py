@@ -238,36 +238,6 @@ class OrditContract(gl.Contract):
             })
         return self._json(normalised)
 
-    def _summarise_evidence_sources(self, raw_sources: str) -> str:
-        sources = self._parse_json_list(raw_sources)
-        summaries: typing.List[typing.Any] = []
-        for source in sources:
-            if len(summaries) >= 4:
-                break
-            if not isinstance(source, dict):
-                continue
-            url = str(source.get("url", "")).strip()
-            label = str(source.get("label", "")).strip()
-            if url == "":
-                continue
-            try:
-                response = gl.nondet.web.get(url)
-                body = response.body.decode("utf-8", errors="ignore")
-                summaries.append({
-                    "url": self._limit(url, 500),
-                    "label": self._limit(label, 120),
-                    "status_code": int(response.status),
-                    "content_preview": self._limit(body, 5000),
-                })
-            except Exception as exc:
-                summaries.append({
-                    "url": self._limit(url, 500),
-                    "label": self._limit(label, 120),
-                    "status_code": 0,
-                    "error": "EXTERNAL_FETCH_ERROR: " + self._limit(str(exc), 240),
-                })
-        return self._json(summaries)
-
     def _next_id(self, prefix: str, counter_name: str) -> str:
         if counter_name == "org":
             self.org_counter = self.org_counter + u256(1)
@@ -486,11 +456,137 @@ class OrditContract(gl.Contract):
             "report_type": dashboard.get("report_type", ""),
             "reporting_period": dashboard.get("reporting_period", ""),
         })
+        evidence_source_urls_json = str(request_record.get("evidence_source_urls", "[]"))
+
+        def local_limit(value: typing.Any, max_len: int) -> str:
+            text = str(value) if value is not None else ""
+            if len(text) > max_len:
+                return text[:max_len]
+            return text
+
+        def local_to_int(value: typing.Any, fallback: int) -> int:
+            try:
+                return int(value)
+            except Exception:
+                return fallback
+
+        def local_bounded_score(value: typing.Any, fallback: int) -> int:
+            score = local_to_int(value, fallback)
+            if score < 0:
+                return 0
+            if score > 100:
+                return 100
+            return score
+
+        def local_list_of_strings(value: typing.Any, max_items: int, max_len: int) -> typing.List[str]:
+            result: typing.List[str] = []
+            if isinstance(value, list):
+                for item in value:
+                    if len(result) >= max_items:
+                        break
+                    result.append(local_limit(item, max_len))
+                return result
+            if value is None:
+                return result
+            text = str(value)
+            if len(text.strip()) == 0:
+                return result
+            result.append(local_limit(text, max_len))
+            return result
+
+        def local_normalise_verdict(value: typing.Any) -> str:
+            v = str(value).strip().upper()
+            if v in ["APPROVE", "APPROVED", "PASS", "SUPPORTED", "VALID"]:
+                return "APPROVED"
+            if v in ["UNSUPPORTED", "REJECT", "REJECTED", "FAIL", "INVALID", "FALSE"]:
+                return "UNSUPPORTED"
+            if v in ["NEEDS_REVIEW", "REVIEW", "ESCALATE", "UNCERTAIN"]:
+                return "NEEDS_REVIEW"
+            if v in ["NEEDS_REVISION", "REVISION", "REVISE", "PARTIAL", "MIXED"]:
+                return "NEEDS_REVISION"
+            return "NEEDS_REVIEW"
+
+        def local_normalise_audit_result(raw: typing.Any) -> typing.Any:
+            if isinstance(raw, str):
+                parsed = json.loads(raw)
+            else:
+                parsed = raw
+
+            verdict = local_normalise_verdict(parsed.get("verdict", "NEEDS_REVIEW"))
+            scores = parsed.get("scores", {})
+            findings = parsed.get("findings", {})
+
+            reviewer_required = verdict == "NEEDS_REVIEW"
+            revision_required = verdict == "NEEDS_REVISION"
+
+            return {
+                "verdict": verdict,
+                "scores": {
+                    "evidence_support": local_bounded_score(scores.get("evidence_support", scores.get("evidence_support_score", 0)), 0),
+                    "statistical_confidence": local_bounded_score(scores.get("statistical_confidence", scores.get("statistical_confidence_score", 0)), 0),
+                    "explainability": local_bounded_score(scores.get("explainability", scores.get("explainability_score", 0)), 0),
+                    "narrative_accuracy": local_bounded_score(scores.get("narrative_accuracy", scores.get("narrative_accuracy_score", 0)), 0),
+                    "business_impact": local_bounded_score(scores.get("business_impact", scores.get("business_impact_score", 0)), 0),
+                    "hallucination_risk": local_bounded_score(scores.get("hallucination_risk", scores.get("hallucination_risk_score", 100)), 100),
+                    "completeness": local_bounded_score(scores.get("completeness", scores.get("completeness_score", 0)), 0),
+                    "confidence": local_bounded_score(scores.get("confidence", scores.get("confidence_score", 50)), 50),
+                },
+                "findings": {
+                    "supported_claims": local_list_of_strings(findings.get("supported_claims", []), 16, 400),
+                    "unsupported_claims": local_list_of_strings(findings.get("unsupported_claims", []), 16, 400),
+                    "misleading_statements": local_list_of_strings(findings.get("misleading_statements", []), 12, 400),
+                    "missing_context": local_list_of_strings(findings.get("missing_context", []), 12, 360),
+                    "recommendations": local_list_of_strings(findings.get("recommendations", []), 12, 360),
+                    "required_changes": local_list_of_strings(findings.get("required_changes", []), 12, 360),
+                    "risks": local_list_of_strings(findings.get("risks", []), 10, 360),
+                    "cited_sources": local_list_of_strings(findings.get("cited_sources", []), 12, 500),
+                    "evidence_gaps": local_list_of_strings(findings.get("evidence_gaps", []), 12, 400),
+                    "evidence_quality": local_limit(findings.get("evidence_quality", ""), 800),
+                    "rationale": local_limit(findings.get("rationale", ""), 2000),
+                    "audit_summary": local_limit(findings.get("audit_summary", ""), 800),
+                },
+                "reviewer_required": reviewer_required,
+                "revision_required": revision_required,
+            }
+
+        def local_parse_sources(raw_sources: str) -> typing.List[typing.Any]:
+            try:
+                sources = json.loads(raw_sources)
+                if not isinstance(sources, list):
+                    sources = []
+            except Exception:
+                sources = []
+            return sources
 
         def evaluate_once() -> str:
-            evidence_summaries = self._summarise_evidence_sources(
-                str(request_record.get("evidence_source_urls", "[]"))
-            )
+            sources = local_parse_sources(evidence_source_urls_json)
+            summaries: typing.List[typing.Any] = []
+            for source in sources:
+                if len(summaries) >= 4:
+                    break
+                if not isinstance(source, dict):
+                    continue
+                url = str(source.get("url", "")).strip()
+                label = str(source.get("label", "")).strip()
+                if url == "":
+                    continue
+                try:
+                    response = gl.nondet.web.get(url)
+                    body = response.body.decode("utf-8", errors="ignore")
+                    summaries.append({
+                        "url": local_limit(url, 500),
+                        "label": local_limit(label, 120),
+                        "status_code": int(response.status),
+                        "content_preview": local_limit(body, 5000),
+                    })
+                except Exception as exc:
+                    summaries.append({
+                        "url": local_limit(url, 500),
+                        "label": local_limit(label, 120),
+                        "status_code": 0,
+                        "error": "EXTERNAL_FETCH_ERROR: " + local_limit(str(exc), 240),
+                    })
+            evidence_summaries = json.dumps(summaries, sort_keys=True)
             prompt = f"""
 You are a decentralized AI insight auditor for Ordit.
 
@@ -573,7 +669,7 @@ Verdicts:
 - NEEDS_REVIEW: ambiguous case requiring human expert review
 """
             raw = gl.nondet.exec_prompt(prompt, response_format="json")
-            normalised = self._normalise_audit_result(raw)
+            normalised = local_normalise_audit_result(raw)
             try:
                 fetched_sources = json.loads(evidence_summaries)
                 fetched_urls: typing.List[str] = []
@@ -582,15 +678,15 @@ Verdicts:
                     if not isinstance(source, dict):
                         continue
                     url = str(source.get("url", "")).strip()
-                    status_code = self._to_int(source.get("status_code", 0), 0)
+                    status_code = local_to_int(source.get("status_code", 0), 0)
                     if url != "" and status_code > 0 and status_code < 400:
-                        fetched_urls.append(self._limit(url, 500))
+                        fetched_urls.append(local_limit(url, 500))
                     elif url != "":
-                        fetch_gaps.append(self._limit(url + " fetch failed", 400))
+                        fetch_gaps.append(local_limit(url + " fetch failed", 400))
                 if len(fetched_urls) > 0 and len(normalised["findings"]["cited_sources"]) == 0:
                     normalised["findings"]["cited_sources"] = fetched_urls
                 if len(fetch_gaps) > 0:
-                    normalised["findings"]["evidence_gaps"] = self._list_of_strings(
+                    normalised["findings"]["evidence_gaps"] = local_list_of_strings(
                         normalised["findings"]["evidence_gaps"] + fetch_gaps,
                         12,
                         400,
