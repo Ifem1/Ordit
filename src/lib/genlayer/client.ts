@@ -1,11 +1,21 @@
 import { createClient } from "genlayer-js";
 import { TransactionStatus } from "genlayer-js/types";
 import { studionet } from "genlayer-js/chains";
+import type { Account } from "viem";
 
 function assertContractAddress(contractAddress: string) {
   if (!/^0x[a-fA-F0-9]{40}$/.test(contractAddress)) {
     throw new Error("Set NEXT_PUBLIC_ORDIT_CONTRACT_ADDRESS to a deployed OrditContract address.");
   }
+}
+
+function browserWalletAccount(address: string): Account {
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    throw new Error("Connect Rabby or MetaMask with a valid wallet address.");
+  }
+  // genlayer-js delegates signing to the injected provider for browser wallets,
+  // but its write path still expects an account object with an address field.
+  return { address: address as `0x${string}` } as unknown as Account;
 }
 
 function normalizeGenLayerError(err: unknown, method: string): Error {
@@ -28,9 +38,10 @@ function buildWriteClient(address: string) {
   if (typeof window === "undefined" || !window.ethereum) {
     throw new Error("Connect Rabby or MetaMask to submit GenLayer transactions.");
   }
+  const account = browserWalletAccount(address);
   return createClient({
     chain: studionet,
-    account: address as `0x${string}`,
+    account,
     provider: window.ethereum,
   });
 }
@@ -68,11 +79,13 @@ export async function callGenLayerWrite(
   senderAddress: string,
 ): Promise<{ tx_hash: string; result: unknown }> {
   assertContractAddress(contractAddress);
+  const account = browserWalletAccount(senderAddress);
   const client = buildWriteClient(senderAddress);
   await client.connect("studionet");
 
   try {
     const txHash = await client.writeContract({
+      account,
       address: contractAddress as `0x${string}`,
       functionName: method,
       args: [],
