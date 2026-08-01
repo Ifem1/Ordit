@@ -80,6 +80,11 @@ describe("GenLayer browser wallet writes", () => {
         }),
       }),
     );
+    expect(createClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: "0x1111111111111111111111111111111111111111",
+      }),
+    );
     expect(connectMock).not.toHaveBeenCalled();
     expect(providerRequestMock).toHaveBeenCalledWith({ method: "eth_chainId" });
     expect(providerRequestMock).not.toHaveBeenCalledWith(

@@ -92,10 +92,10 @@ function buildWriteClient(address: string) {
   if (typeof window === "undefined" || !window.ethereum) {
     throw new Error("Connect Rabby or MetaMask to submit GenLayer transactions.");
   }
-  const account = browserWalletAccount(address);
+  browserWalletAccount(address);
   return createClient({
     chain: studionet,
-    account,
+    account: address as `0x${string}`,
     provider: window.ethereum,
   });
 }
