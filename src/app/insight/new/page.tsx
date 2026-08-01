@@ -103,9 +103,10 @@ export default function NewInsightAuditPage() {
       setStep("consensus");
 
       const ts = new Date().toISOString();
-      const { request } = await submitAndAuditInsight(
+      const requestId = crypto.randomUUID();
+      await submitAndAuditInsight(
         {
-          request_id: "",
+          request_id: requestId,
           org_id: data.org_id,
           dataset_id: data.dataset_id,
           dashboard_id: data.dashboard_id,
@@ -123,7 +124,7 @@ export default function NewInsightAuditPage() {
       );
 
       setStep("done");
-      router.push(`/case/${request.id}`);
+      router.push(`/case/${requestId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
       setStep("form");
