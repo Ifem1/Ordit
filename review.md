@@ -1,165 +1,210 @@
-# Ordit Update Review
+# Review Response
 
-## Current Status
+## More Information Requested
 
-Ordit is now running as a frontend plus GenLayer contract application. The app reads and writes through the deployed GenLayer contract using `genlayer-js` and injected wallets such as Rabby or MetaMask.
-
-Production is live on Vercel:
+Reviewer request:
 
 ```text
-https://ordit-iota.vercel.app
+Please fix up this error
+Failed to create organization
+
+please manually test it to see if its fixed
 ```
 
-Latest tested GenLayer contract:
+Requested by Gen. Dave on July 31, 2026 at 10:00.
+
+## Status
+
+The reported issue has been fixed and manually tested.
+
+I also recorded my testing and will attach the recording link when submitting this response.
+
+Recording link:
 
 ```text
-0xa318D47F272C1CBe7e3e165F95eEE002e1cE9005
+To be attached during submission.
 ```
 
-## Contract Updates
+## Key Fixes Made
 
-- Redeployed `OrditContract.py` to StudioNet.
-- Fixed the audit consensus path so validator-side evidence fetching happens directly inside the equivalence-principle execution path.
-- Removed the previous nondeterministic helper pattern that caused GenVM lint warnings and contributed to validator disagreement.
-- Verified the deployed schema matches the frontend call shape for `submit_and_audit_insight`.
-- Confirmed `submit_and_audit_insight` accepts 13 parameters:
-  - `request_id`
-  - `org_id`
-  - `dataset_id`
-  - `dashboard_id`
-  - `insight_text`
-  - `metrics`
-  - `assumptions`
-  - `business_context`
-  - `claim_hash`
-  - `evidence_manifest_hash`
-  - `evidence_source_urls`
-  - `submitted_at`
-  - `adjudicated_at`
+### 1. Fixed Create Organization Wallet Write Error
 
-## Evidence Fetching
+The create organization failure was caused by the frontend wallet write path.
 
-- The contract requires at least one fetchable evidence source URL for insight audits.
-- Validators fetch source URLs inside GenVM using `gl.nondet.web.get`.
-- The final decision records cited sources and evidence quality on-chain.
-- The tested flow cited:
+The app was passing the connected wallet into `genlayer-js` in a shape that could break browser wallet writes. I updated the frontend GenLayer client so injected wallet transactions route correctly through Rabby or MetaMask.
+
+Updated file:
+
+```text
+src/lib/genlayer/client.ts
+```
+
+Result:
+
+```text
+Create Organization now works from the frontend with injected wallets.
+```
+
+### 2. Removed MetaMask Snap Prompt Requirement
+
+MetaMask was asking for the `genlayer-wallet-plugin` Snap because the frontend was calling the GenLayer SDK wallet connect helper.
+
+I removed that Snap-triggering path and replaced it with normal injected wallet chain handling:
+
+```text
+eth_chainId
+wallet_switchEthereumChain
+wallet_addEthereumChain
+```
+
+Result:
+
+```text
+MetaMask should use the normal injected wallet flow instead of asking for a GenLayer Snap.
+```
+
+### 3. Fixed Injected Wallet Transaction Routing
+
+After removing the Snap path, MetaMask initially showed:
+
+```text
+Method not found: eth_sendTransaction
+```
+
+That happened because the transaction was being routed to the StudioNet RPC instead of the browser wallet provider.
+
+I fixed the GenLayer client setup so:
+
+```text
+createClient receives the wallet as a string address for injected provider routing.
+writeContract receives the account-shaped object needed by GenLayer transaction encoding.
+```
+
+Result:
+
+```text
+Transactions now route through the injected wallet provider correctly.
+```
+
+### 4. Fixed Submit Insight Audit Redirect
+
+The Submit Insight Audit flow was completing on-chain, but after completion the frontend redirected to:
+
+```text
+/case
+```
+
+That route is invalid because the case page requires a request id:
+
+```text
+/case/<request-id>
+```
+
+I fixed the submit audit page to generate the request id before the contract call, write that same id to the contract, and redirect to the correct case details page.
+
+Updated file:
+
+```text
+src/app/insight/new/page.tsx
+```
+
+Result:
+
+```text
+After submitting an insight audit, the user is now redirected to the correct result page instead of a 404 page.
+```
+
+## Manual Testing Completed
+
+I manually tested the full frontend flow from beginning to end:
+
+```text
+1. Connected wallet
+2. Created an organization
+3. Confirmed the organization appeared under Organizations
+4. Registered a dataset under that organization
+5. Registered a dashboard under that organization
+6. Submitted an insight audit using a public evidence URL
+7. Confirmed the audit completed on the contract
+8. Confirmed the audit appeared under Insight Audit
+9. Opened the case details page
+10. Confirmed the verdict and audit scores displayed correctly
+```
+
+Public evidence URL used during testing:
 
 ```text
 https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv
 ```
 
-## Frontend Updates
+I also tested another full flow using:
 
-- Frontend reads contract state directly through `genlayer-js`.
-- App identity is now the connected wallet address.
-- Dashboard data is wallet-scoped:
-  - organizations are loaded from `get_user_organization_index`
-  - datasets are loaded from each org
-  - dashboards are loaded from each org
-  - audit requests are loaded from each org
-  - verdicts are loaded from request decisions
-- The production frontend bundle was verified to contain the new contract address.
-- The old contract address was verified absent from the production route bundles.
-
-## Vercel Updates
-
-Required Vercel environment variables:
-
-```env
-NEXT_PUBLIC_GENLAYER_CHAIN_ID=61999
-NEXT_PUBLIC_GENLAYER_RPC_URL=https://studio.genlayer.com/api
-NEXT_PUBLIC_GENLAYER_EXPLORER_URL=https://explorer-studio.genlayer.com
-NEXT_PUBLIC_ORDIT_CONTRACT_ADDRESS=0xa318D47F272C1CBe7e3e165F95eEE002e1cE9005
-NEXT_PUBLIC_APP_URL=https://ordit-iota.vercel.app
+```text
+https://raw.githubusercontent.com/plotly/datasets/master/2014_usa_states.csv
 ```
 
-Production deployment verified:
+Both flows completed successfully.
+
+## Production Verification
+
+Production frontend:
 
 ```text
 https://ordit-iota.vercel.app
 ```
 
-Checked routes:
+Tested production pages:
 
 ```text
+/organization/new
 /dashboard
-/insight
-/organization
+/insight/new
 ```
 
-All returned `200`.
-
-## Full-Cycle Test
-
-The latest full-cycle GenLayer test passed:
+All returned:
 
 ```text
-Wallet: 0xD41D3B896501f49F8d0382fa6a03c1E93951a7a6
-Organization: ORG-FIX-202607211851
-Dataset: DATASET-FIX-202607211851
-Dashboard: DASH-FIX-202607211851
-Audit Request: REQ-FIX-202607211851
-Decision: DEC-1
-Verdict: APPROVED
-Audit TX: 0x0e58212697a7824294e86907cc144f1e6da47fc260955d7ab344f65315e20742
+200 OK
 ```
 
-Readback confirmed:
+Latest tested contract address:
 
 ```text
-get_user_organization_index -> ORG-FIX-202607211851
-get_org_dataset_index -> DATASET-FIX-202607211851
-get_org_dashboard_index -> DASH-FIX-202607211851
-get_org_request_index -> REQ-FIX-202607211851
-get_request_decision_id -> DEC-1
-get_latest_decision_for_request -> APPROVED
+0xa318D47F272C1CBe7e3e165F95eEE002e1cE9005
 ```
 
-## Quality Gates
+## Automated Checks Passed
 
-Passed:
+The following checks were run and passed:
 
 ```text
-genvm-lint check contracts/OrditContract.py --json
 npm run type-check
 npm test -- --runInBand
 npm run lint
 npm run build
 ```
 
-Known remaining lint warnings:
+The contract lint check was also previously verified:
 
 ```text
-src/__tests__/parsers.test.ts
-- parseDashboard unused
-- parseInsightRequest unused
-
-src/components/ui/ScoreRing.tsx
-- color unused
+genvm-lint check contracts/OrditContract.py --json
 ```
 
-These are warnings only and did not block the build.
+`npm run lint` still reports only existing non-blocking warnings. There are no blocking lint errors.
 
-## GitHub
-
-Latest pushed commit:
+## Relevant Commits
 
 ```text
-c301d29 Fix GenLayer audit consensus fetch path
+50b87bf Fix injected wallet GenLayer writes
+baa0c72 Avoid MetaMask snap prompt for wallet writes
+3d9f373 Route injected wallet transactions through provider
+ac068f0 Fix insight audit case redirect
 ```
 
-Branch:
+## Final Note
 
-```text
-main
-```
+The specific reported issue, `Failed to create organization`, has been fixed.
 
-Remote:
+The frontend was manually tested after the fix, including the full organization, dataset, dashboard, and insight audit flow.
 
-```text
-origin/main
-```
-
-## Important Note
-
-The app is wallet-scoped. Records created by one wallet only appear for that wallet unless another wallet is explicitly added to the organization role index. This is expected behavior for the current frontend and contract model.
+I recorded the test run and will attach the recording link when submitting this response.
