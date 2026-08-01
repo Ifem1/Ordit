@@ -5,6 +5,7 @@ const connectMock = jest.fn();
 const writeContractMock = jest.fn();
 const waitForTransactionReceiptMock = jest.fn();
 const readContractMock = jest.fn();
+const providerRequestMock = jest.fn();
 
 jest.mock("genlayer-js", () => ({
   createClient: jest.fn(),
@@ -34,6 +35,10 @@ describe("GenLayer browser wallet writes", () => {
     writeContractMock.mockResolvedValue("0xtx");
     waitForTransactionReceiptMock.mockResolvedValue({ result: "ORG-TEST" });
     readContractMock.mockResolvedValue("");
+    providerRequestMock.mockImplementation(({ method }: { method: string }) => {
+      if (method === "eth_chainId") return Promise.resolve("0xf22f");
+      return Promise.resolve(null);
+    });
     (createClient as jest.Mock).mockReturnValue({
       connect: connectMock,
       writeContract: writeContractMock,
@@ -45,7 +50,7 @@ describe("GenLayer browser wallet writes", () => {
       configurable: true,
       value: {
         ethereum: {
-          request: jest.fn(),
+          request: providerRequestMock,
         },
       },
     });
@@ -74,6 +79,11 @@ describe("GenLayer browser wallet writes", () => {
           name: "QA Org",
         }),
       }),
+    );
+    expect(connectMock).not.toHaveBeenCalled();
+    expect(providerRequestMock).toHaveBeenCalledWith({ method: "eth_chainId" });
+    expect(providerRequestMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ method: "wallet_requestSnaps" }),
     );
   });
 });

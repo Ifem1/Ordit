@@ -2,6 +2,7 @@ import { createClient } from "genlayer-js";
 import { TransactionStatus } from "genlayer-js/types";
 import { studionet } from "genlayer-js/chains";
 import type { Account } from "viem";
+import { GENLAYER_CONFIG } from "./config";
 
 function assertContractAddress(contractAddress: string) {
   if (!/^0x[a-fA-F0-9]{40}$/.test(contractAddress)) {
@@ -18,8 +19,61 @@ function browserWalletAccount(address: string): Account {
   return { address: address as `0x${string}` } as unknown as Account;
 }
 
+function chainIdHex(chainId: number): `0x${string}` {
+  return `0x${chainId.toString(16)}`;
+}
+
+function getProviderErrorCode(err: unknown): number | undefined {
+  if (typeof err === "object" && err !== null && "code" in err) {
+    const code = (err as { code?: unknown }).code;
+    return typeof code === "number" ? code : undefined;
+  }
+  return undefined;
+}
+
+async function ensureInjectedWalletChain(): Promise<void> {
+  if (typeof window === "undefined" || !window.ethereum?.request) {
+    throw new Error("Connect Rabby or MetaMask to submit GenLayer transactions.");
+  }
+
+  const expectedChainId = chainIdHex(GENLAYER_CONFIG.chainId);
+  const currentChainId = await window.ethereum.request({ method: "eth_chainId" });
+  if (typeof currentChainId === "string" && currentChainId.toLowerCase() === expectedChainId) {
+    return;
+  }
+
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: expectedChainId }],
+    });
+  } catch (err) {
+    if (getProviderErrorCode(err) !== 4902) {
+      throw err;
+    }
+
+    await window.ethereum.request({
+      method: "wallet_addEthereumChain",
+      params: [{
+        chainId: expectedChainId,
+        chainName: "GenLayer StudioNet",
+        nativeCurrency: {
+          name: "GEN",
+          symbol: "GEN",
+          decimals: 18,
+        },
+        rpcUrls: [GENLAYER_CONFIG.rpcUrl],
+        blockExplorerUrls: [GENLAYER_CONFIG.explorerUrl],
+      }],
+    });
+  }
+}
+
 function normalizeGenLayerError(err: unknown, method: string): Error {
   const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("User rejected") || message.includes("rejected the request")) {
+    return new Error("Wallet request was rejected.");
+  }
   if (message.includes("Missing or invalid parameters") || message.includes("execution failed")) {
     return new Error(
       `Contract call failed for ${method}. The configured address may point to an older OrditContract deployment; redeploy the updated contract and set NEXT_PUBLIC_ORDIT_CONTRACT_ADDRESS.`,
@@ -81,9 +135,9 @@ export async function callGenLayerWrite(
   assertContractAddress(contractAddress);
   const account = browserWalletAccount(senderAddress);
   const client = buildWriteClient(senderAddress);
-  await client.connect("studionet");
 
   try {
+    await ensureInjectedWalletChain();
     const txHash = await client.writeContract({
       account,
       address: contractAddress as `0x${string}`,
