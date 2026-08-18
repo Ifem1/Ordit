@@ -19,9 +19,3 @@ Ordit has been pivoted to a frontend + GenLayer contract architecture.
 - `genvm-lint check contracts/OrditContract.py --json`
 - `npm run build`
 
-## Remaining
-
-- Redeploy the contract and set `NEXT_PUBLIC_ORDIT_CONTRACT_ADDRESS`.
-- Run contract direct tests for evidence-source validation.
-- Run integration tests on the target GenLayer network.
-- Decide whether future paid access should be implemented as an on-chain entitlement.
