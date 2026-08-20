@@ -635,12 +635,16 @@ class OrditContract(gl.Contract):
                 try:
                     response = gl.nondet.web.get(url)
                     body = response.body.decode("utf-8", errors="ignore")
+                    # The excerpt is the exact deterministic representation presented to
+                    # validators. Never commit/hash the full response and then store only
+                    # an excerpt: citations must bind to the same bytes validators saw.
+                    canonical_content = local_limit(body, 5000)
                     summaries.append({
                         "url": local_limit(url, 500),
                         "label": local_limit(label, 120),
                         "status_code": int(response.status),
-                        "content": local_limit(body, 5000),
-                        "content_hash": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+                        "content": canonical_content,
+                        "content_hash": hashlib.sha256(canonical_content.encode("utf-8")).hexdigest(),
                     })
                 except Exception as exc:
                     summaries.append({
