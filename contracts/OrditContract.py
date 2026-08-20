@@ -1061,8 +1061,8 @@ Verdicts:
         org = self._load(self.organizations.get(org_id, ""))
         if org.get("owner", "").lower() != self._sender():
             raise gl.vm.UserError("Only org owner can manage roles")
-        self._require_non_empty(wallet, "wallet")
         normalised_wallet = self._normalise_wallet(wallet)
+        self._require_non_empty(normalised_wallet, "wallet")
         allowed = ["ANALYST", "REVIEWER", "ADMIN"]
         if role.upper() not in allowed:
             raise gl.vm.UserError("Invalid role. Must be ANALYST, REVIEWER, or ADMIN")
