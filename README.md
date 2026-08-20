@@ -33,8 +33,8 @@ Required environment:
 ```bash
 NEXT_PUBLIC_GENLAYER_CHAIN_ID=61999
 NEXT_PUBLIC_GENLAYER_RPC_URL=https://studio.genlayer.com/api
-NEXT_PUBLIC_GENLAYER_EXPLORER_URL=https://explorer-studio.genlayer.com
-NEXT_PUBLIC_ORDIT_CONTRACT_ADDRESS=0x_your_deployed_contract_address
+NEXT_PUBLIC_GENLAYER_EXPLORER_URL=https://genlayer-explorer.vercel.app
+NEXT_PUBLIC_ORDIT_CONTRACT_ADDRESS=0xd4B2374dfe85A8E5bca55e7535bB6cd23A10D65e
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
@@ -48,4 +48,4 @@ genvm-lint check contracts/OrditContract.py --json
 npm run build
 ```
 
-The repository currently has no checked-in StudioNet deployment or GenLayer integration harness. A deployment address, transaction hashes, explorer link, and production URL must be recorded here only after a fresh deployment and live trust-path run.
+The current StudioNet contract is [`0xd4B2374dfe85A8E5bca55e7535bB6cd23A10D65e`](https://genlayer-explorer.vercel.app/address/0xd4B2374dfe85A8E5bca55e7535bB6cd23A10D65e), deployed from commit `58908b0a7fb9861a8311b4a9b8570711cf82dbc1` in transaction `0xa5ae29a703f1def138719ace42f3e9356c818fee941ddb7a3462e39d0167e4d7`. The production application URL recorded in the deployment evidence is https://ordit-iota.vercel.app.
