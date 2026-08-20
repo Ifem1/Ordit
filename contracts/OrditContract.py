@@ -715,7 +715,7 @@ Return this exact JSON object:
     "rationale": "clear explanation for the verdict",
     "audit_summary": "executive summary of the audit finding"
   }},
-  "evidence_bundle": [{"url": "", "label": "", "status_code": 0, "content": "", "content_hash": "", "error": ""}]
+  "evidence_bundle": [{{"url": "", "label": "", "status_code": 0, "content": "", "content_hash": "", "error": ""}}]
 }}
 
 Score guidance (0-100):
