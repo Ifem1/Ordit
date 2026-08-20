@@ -772,13 +772,21 @@ Verdicts:
                 pass
             return json.dumps(normalised, sort_keys=True)
 
-        consensus_json = gl.eq_principle.prompt_non_comparative(
+        # This is a decision/scoring workflow, not an open-ended summary.
+        # Comparative consensus returns the leader's structured candidate while
+        # requiring validators to independently fetch and derive a candidate.
+        consensus_json = gl.eq_principle.prompt_comparative(
             evaluate_once,
-            task="Audit an AI-generated business insight against provided data and return a structured JSON verdict with scores and findings.",
-            criteria="Validators must independently re-fetch every permitted source, inspect its returned content, decide whether each material claim is supported, contradicted, ambiguous, or unevaluable, and verify the proposed verdict, material scores/findings, and every citation against that content. A fetchable URL is not evidence of support. Reject materially contradictory leader results; use NEEDS_REVIEW when evidence is unavailable or ambiguous. Equivalent semantic findings are acceptable; byte-identical prose is not required.",
+            principle="Validators must independently re-fetch every permitted source and inspect its canonical fetched content. Verdict, material claim classification, evidence-support score bucket, and every structured citation's URL/content_hash/claim binding must be evidence-grounded and semantically equivalent. A fetchable URL is not evidence of support. Reject materially contradictory candidates; insufficient or ambiguous evidence must produce NEEDS_REVIEW. Rationale prose need not be byte-identical.",
         )
 
-        consensus_payload = self._load(consensus_json) if isinstance(consensus_json, str) else consensus_json
+        consensus_payload: typing.Any = {}
+        try:
+            consensus_payload = self._load(consensus_json) if isinstance(consensus_json, str) else consensus_json
+        except Exception:
+            # A malformed equivalence-template response must never revert an
+            # adjudication into an unreviewable pending state.
+            consensus_payload = {"verdict": "NEEDS_REVIEW", "findings": {"evidence_gaps": ["Consensus response was not valid JSON"]}}
         final_result = self._normalise_audit_result(consensus_payload)
         evidence_bundle = []
         try:
