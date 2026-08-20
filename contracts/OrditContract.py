@@ -5,6 +5,7 @@ from genlayer import *
 
 import json
 import typing
+import hashlib
 
 
 class OrditContract(gl.Contract):
@@ -313,6 +314,55 @@ class OrditContract(gl.Contract):
         if not self._is_org_member(org_id, self._sender()):
             raise gl.vm.UserError("Not an organization member")
 
+    def _require_org_role(self, org_id: str, allowed_roles: typing.List[str]) -> None:
+        """Require an explicit role; organization ownership is not implicit here."""
+        self._require_org_exists(org_id)
+        org = self._load(self.organizations.get(org_id, ""))
+        role = "OWNER" if org.get("owner", "").lower() == self._sender() else self.org_roles.get(self._key2(org_id, self._sender()), "")
+        if role not in allowed_roles:
+            raise gl.vm.UserError("Caller lacks required organization role")
+
+    def _sha256(self, value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    def _canonical_source_record(self, source: typing.Any) -> str:
+        return self._json({
+            "url": str(source.get("url", "")),
+            "label": str(source.get("label", "")),
+            "status_code": self._to_int(source.get("status_code", 0), 0),
+            "content_hash": str(source.get("content_hash", "")),
+            "content": str(source.get("content", "")),
+            "error": str(source.get("error", "")),
+        })
+
+    def _fetched_evidence_commitment(self, evidence_bundle: typing.Any) -> str:
+        records = []
+        for source in evidence_bundle if isinstance(evidence_bundle, list) else []:
+            records.append(self._sha256(self._canonical_source_record(source)))
+        return self._sha256(self._json(records))
+
+    def _validate_citations(self, result: typing.Any, evidence_bundle: typing.Any) -> None:
+        by_url = {}
+        for source in evidence_bundle if isinstance(evidence_bundle, list) else []:
+            if isinstance(source, dict):
+                by_url[str(source.get("url", ""))] = source
+        citations = result.get("findings", {}).get("cited_sources", [])
+        valid = []
+        for citation in citations if isinstance(citations, list) else []:
+            if not isinstance(citation, dict):
+                continue
+            url = str(citation.get("url", "")).strip()
+            source = by_url.get(url)
+            if source is None or self._to_int(source.get("status_code", 0), 0) >= 400:
+                continue
+            expected_hash = self._sha256(str(source.get("content", "")))
+            if str(citation.get("content_hash", "")) != expected_hash:
+                continue
+            if len(str(citation.get("claim", "")).strip()) == 0:
+                continue
+            valid.append({"url": url, "content_hash": expected_hash, "claim": self._limit(citation.get("claim", ""), 400)})
+        result["findings"]["cited_sources"] = valid
+
     def _assert_no_predecided_verdict(self, text: str) -> None:
         lower = text.lower()
         forbidden = [
@@ -374,7 +424,14 @@ class OrditContract(gl.Contract):
         recommendations = self._list_of_strings(findings.get("recommendations", []), 12, 360)
         required_changes = self._list_of_strings(findings.get("required_changes", []), 12, 360)
         risks = self._list_of_strings(findings.get("risks", []), 10, 360)
-        cited_sources = self._list_of_strings(findings.get("cited_sources", []), 12, 500)
+        cited_sources = []
+        for citation in findings.get("cited_sources", []) if isinstance(findings.get("cited_sources", []), list) else []:
+            if isinstance(citation, dict):
+                cited_sources.append({
+                    "url": self._limit(citation.get("url", ""), 500),
+                    "content_hash": self._limit(citation.get("content_hash", ""), 80),
+                    "claim": self._limit(citation.get("claim", ""), 400),
+                })
         evidence_gaps = self._list_of_strings(findings.get("evidence_gaps", []), 12, 400)
 
         reviewer_required = verdict == "NEEDS_REVIEW"
@@ -515,6 +572,9 @@ class OrditContract(gl.Contract):
             verdict = local_normalise_verdict(parsed.get("verdict", "NEEDS_REVIEW"))
             scores = parsed.get("scores", {})
             findings = parsed.get("findings", {})
+            citations = findings.get("cited_sources", [])
+            if not isinstance(citations, list):
+                citations = []
 
             reviewer_required = verdict == "NEEDS_REVIEW"
             revision_required = verdict == "NEEDS_REVISION"
@@ -539,7 +599,7 @@ class OrditContract(gl.Contract):
                     "recommendations": local_list_of_strings(findings.get("recommendations", []), 12, 360),
                     "required_changes": local_list_of_strings(findings.get("required_changes", []), 12, 360),
                     "risks": local_list_of_strings(findings.get("risks", []), 10, 360),
-                    "cited_sources": local_list_of_strings(findings.get("cited_sources", []), 12, 500),
+                    "cited_sources": citations[:12],
                     "evidence_gaps": local_list_of_strings(findings.get("evidence_gaps", []), 12, 400),
                     "evidence_quality": local_limit(findings.get("evidence_quality", ""), 800),
                     "rationale": local_limit(findings.get("rationale", ""), 2000),
@@ -577,7 +637,8 @@ class OrditContract(gl.Contract):
                         "url": local_limit(url, 500),
                         "label": local_limit(label, 120),
                         "status_code": int(response.status),
-                        "content_preview": local_limit(body, 5000),
+                        "content": local_limit(body, 5000),
+                        "content_hash": hashlib.sha256(body.encode("utf-8")).hexdigest(),
                     })
                 except Exception as exc:
                     summaries.append({
@@ -585,6 +646,8 @@ class OrditContract(gl.Contract):
                         "label": local_limit(label, 120),
                         "status_code": 0,
                         "error": "EXTERNAL_FETCH_ERROR: " + local_limit(str(exc), 240),
+                        "content": "",
+                        "content_hash": hashlib.sha256(b"").hexdigest(),
                     })
             evidence_summaries = json.dumps(summaries, sort_keys=True)
             prompt = f"""
@@ -644,12 +707,13 @@ Return this exact JSON object:
     "recommendations": ["specific improvement recommendation"],
     "required_changes": ["specific change required before approval"],
     "risks": ["specific business or analytical risk"],
-    "cited_sources": ["source URL that supports or contradicts the claim"],
+    "cited_sources": [{{"url": "fetched source URL", "content_hash": "hash of fetched content", "claim": "claim supported or contradicted"}}],
     "evidence_gaps": ["missing, unavailable, or weak evidence issue"],
     "evidence_quality": "brief assessment of source accessibility and reliability",
     "rationale": "clear explanation for the verdict",
     "audit_summary": "executive summary of the audit finding"
-  }}
+  }},
+  "evidence_bundle": [{"url": "", "label": "", "status_code": 0, "content": "", "content_hash": "", "error": ""}]
 }}
 
 Score guidance (0-100):
@@ -671,6 +735,10 @@ Verdicts:
             raw = gl.nondet.exec_prompt(prompt, response_format="json")
             normalised = local_normalise_audit_result(raw)
             try:
+                normalised["evidence_bundle"] = json.loads(evidence_summaries)
+            except Exception:
+                normalised["evidence_bundle"] = []
+            try:
                 fetched_sources = json.loads(evidence_summaries)
                 fetched_urls: typing.List[str] = []
                 fetch_gaps: typing.List[str] = []
@@ -683,8 +751,6 @@ Verdicts:
                         fetched_urls.append(local_limit(url, 500))
                     elif url != "":
                         fetch_gaps.append(local_limit(url + " fetch failed", 400))
-                if len(fetched_urls) > 0 and len(normalised["findings"]["cited_sources"]) == 0:
-                    normalised["findings"]["cited_sources"] = fetched_urls
                 if len(fetch_gaps) > 0:
                     normalised["findings"]["evidence_gaps"] = local_list_of_strings(
                         normalised["findings"]["evidence_gaps"] + fetch_gaps,
@@ -703,32 +769,22 @@ Verdicts:
         consensus_json = gl.eq_principle.prompt_non_comparative(
             evaluate_once,
             task="Audit an AI-generated business insight against provided data and return a structured JSON verdict with scores and findings.",
-            criteria="The result must be valid JSON with a verdict field (APPROVED, NEEDS_REVISION, UNSUPPORTED, or NEEDS_REVIEW), 8 numeric scores between 0-100, and a findings object with rationale and audit_summary. The verdict must be logically consistent with the scores.",
+            criteria="Validators must independently re-fetch every permitted source, inspect its returned content, decide whether each material claim is supported, contradicted, ambiguous, or unevaluable, and verify the proposed verdict, material scores/findings, and every citation against that content. A fetchable URL is not evidence of support. Reject materially contradictory leader results; use NEEDS_REVIEW when evidence is unavailable or ambiguous. Equivalent semantic findings are acceptable; byte-identical prose is not required.",
         )
 
-        final_result = self._normalise_audit_result(consensus_json)
-        source_urls: typing.List[str] = []
+        consensus_payload = self._load(consensus_json) if isinstance(consensus_json, str) else consensus_json
+        final_result = self._normalise_audit_result(consensus_payload)
+        evidence_bundle = []
         try:
-            sources = json.loads(str(request_record.get("evidence_source_urls", "[]")))
-            if isinstance(sources, list):
-                for source in sources:
-                    if len(source_urls) >= 6:
-                        break
-                    if isinstance(source, dict):
-                        url = str(source.get("url", "")).strip()
-                    else:
-                        url = str(source).strip()
-                    if url.startswith("https://") or url.startswith("http://"):
-                        source_urls.append(self._limit(url, 500))
+            evidence_bundle = consensus_payload.get("evidence_bundle", []) if isinstance(consensus_payload, dict) else []
         except Exception:
-            source_urls = []
-        if len(source_urls) > 0 and len(final_result["findings"]["cited_sources"]) == 0 and final_result["scores"]["evidence_support"] > 0:
-            final_result["findings"]["cited_sources"] = source_urls
-        if final_result["findings"]["evidence_quality"] == "" and len(source_urls) > 0:
-            if final_result["scores"]["evidence_support"] > 0:
-                final_result["findings"]["evidence_quality"] = "Consensus decision used " + str(len(source_urls)) + " submitted validator-fetch source URL(s)."
-            else:
-                final_result["findings"]["evidence_quality"] = "Submitted source URL(s) did not provide sufficient support for the claim."
+            evidence_bundle = []
+        final_result["evidence_bundle"] = evidence_bundle
+        final_result["fetched_evidence_commitment"] = self._fetched_evidence_commitment(evidence_bundle)
+        self._validate_citations(final_result, evidence_bundle)
+        if len(evidence_bundle) == 0:
+            final_result["verdict"] = "NEEDS_REVIEW"
+            final_result["reviewer_required"] = True
         return final_result
 
     def _create_insight_request(
@@ -866,6 +922,14 @@ Verdicts:
             "findings": result["findings"],
             "reviewer_required": result["reviewer_required"],
             "revision_required": result["revision_required"],
+            "fetched_evidence_commitment": result.get("fetched_evidence_commitment", ""),
+            "fetched_evidence_sources": [
+                {"url": source.get("url", ""), "label": source.get("label", ""),
+                 "status_code": source.get("status_code", 0),
+                 "content_hash": source.get("content_hash", ""),
+                 "source_commitment": self._sha256(self._canonical_source_record(source))}
+                for source in result.get("evidence_bundle", []) if isinstance(source, dict)
+            ],
             "adjudicated_by": "GENLAYER_CONSENSUS",
             "adjudicated_at": adjudicated_at,
         }
@@ -1289,7 +1353,9 @@ Verdicts:
 
         request_record = self._load(raw_request)
         org_id = request_record.get("org_id", "")
-        self._require_org_member(org_id)
+        self._require_org_role(org_id, ["REVIEWER"])
+        if self._sender() == str(request_record.get("submitted_by", "")).lower():
+            raise gl.vm.UserError("Submitter cannot review their own insight")
 
         if request_record.get("status", "") not in ["NEEDS_REVIEW", "NEEDS_REVISION"]:
             raise gl.vm.UserError("Request is not eligible for human review")
@@ -1364,7 +1430,7 @@ Verdicts:
 
         request_record = self._load(raw_request)
         org_id = request_record.get("org_id", "")
-        self._require_org_member(org_id)
+        self._require_org_role(org_id, ["OWNER", "ADMIN"])
 
         if request_record.get("status", "") not in ["APPROVED"]:
             raise gl.vm.UserError("Insight must be APPROVED before activation")
@@ -1404,7 +1470,7 @@ Verdicts:
 
         request_record = self._load(raw_request)
         org_id = request_record.get("org_id", "")
-        self._require_org_member(org_id)
+        self._require_org_role(org_id, ["OWNER", "ADMIN"])
 
         request_record["status"] = "BLOCKED"
         request_record["block_reason"] = self._limit(block_reason, 800)
