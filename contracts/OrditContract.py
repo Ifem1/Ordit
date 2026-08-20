@@ -205,11 +205,13 @@ class OrditContract(gl.Contract):
         result.append(self._limit(text, max_len))
         return result
 
-    def _parse_json_list(self, value: str) -> typing.List[typing.Any]:
-        if value is None or value.strip() == "":
+    def _parse_json_list(self, value: typing.Any) -> typing.List[typing.Any]:
+        if isinstance(value, list):
+            return value
+        if value is None or str(value).strip() == "":
             return []
         try:
-            parsed = json.loads(value)
+            parsed = json.loads(str(value))
             if isinstance(parsed, list):
                 return parsed
         except Exception:
